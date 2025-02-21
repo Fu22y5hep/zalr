@@ -80,9 +80,16 @@ WSGI_APPLICATION = "zalr_backend.wsgi.application"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('SUPABASE_DATABSE'),
+        'USER': os.getenv('SUPABASE_USER'),
+        'PASSWORD': os.getenv('SUPABASE_PROJECT_PASSWORD'),
+        'HOST': os.getenv('SUPABASE_HOST'),
+        'PORT': os.getenv('SUPABASE_PORT'),
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
     }
 }
 
