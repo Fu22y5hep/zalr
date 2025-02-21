@@ -1,0 +1,13 @@
+The project is a Django backend for a law reports website.
+Consider the following:
+    The task list notepad;
+    The project specification 1 notepad
+    The project specification 2 notepad.
+The Project has been created in Supabase. The vector extension is installed..
+The .env file is in the root directory.
+The project venv is called zalr.
+The django project has been created and is called zalr_backend.
+The semantis app has been created in the django project.
+
+PLEASE ALWAYS UPDATE THE TASK LIST NOTEPAD WITH THE TASKS YOU HAVE COMPLETED.
+
