@@ -4,7 +4,7 @@ import uuid
 
 class Judgment(models.Model):
     """
-    Model to store legal judgments with their metadata and vector embeddings
+    Model to store legal judgments with their metadata, vector embeddings and text chunks
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=1000)
@@ -14,10 +14,14 @@ class Judgment(models.Model):
     judgment_date = models.DateField(null=True, blank=True)
     judges = models.TextField(null=True, blank=True)
     text_markdown = models.TextField()
-    vector_embedding = VectorField(dimensions=768, null=True, blank=True)  # Using 768 dimensions for compatibility with many embedding models
+    vector_embedding = VectorField(dimensions=1024, null=True, blank=True)  # Using 1024 dimensions for voyage-law-2
     saflii_url = models.URLField(max_length=200, null=True, blank=True)
     reportability_score = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Store chunks as JSON array
+    chunks = models.JSONField(null=True, blank=True)
+    chunks_embedded = models.BooleanField(default=False)  # Track if chunks have been embedded
 
     def __str__(self):
         return f"{self.title} ({self.case_number})"
@@ -38,7 +42,7 @@ class Statute(models.Model):
     act_number = models.CharField(max_length=50, null=True, blank=True)
     year = models.IntegerField(null=True, blank=True)
     text_markdown = models.TextField()
-    vector_embedding = VectorField(dimensions=768, null=True, blank=True)
+    vector_embedding = VectorField(dimensions=1024, null=True, blank=True)
     source_url = models.URLField(max_length=200, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from semantis_app.scraping import scrape_court_year, ScrapingError
+from semantis_app.utils.scraping import scrape_court_year, ScrapingError
 
 class Command(BaseCommand):
     help = 'Test the scraping functionality by scraping judgments from a specific court and year'

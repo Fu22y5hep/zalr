@@ -82,14 +82,16 @@ WSGI_APPLICATION = "zalr_backend.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('SUPABASE_DATABSE'),
-        'USER': os.getenv('SUPABASE_USER'),
-        'PASSWORD': os.getenv('SUPABASE_PROJECT_PASSWORD'),
-        'HOST': os.getenv('SUPABASE_HOST'),
-        'PORT': os.getenv('SUPABASE_PORT'),
+        'NAME': os.getenv('SUPABASE_DB_NAME'),
+        'USER': os.getenv('SUPABASE_DB_USER'),
+        'PASSWORD': os.getenv('SUPABASE_DB_PASSWORD'),
+        'HOST': os.getenv('SUPABASE_DB_HOST'),
+        'PORT': os.getenv('SUPABASE_DB_PORT'),
         'OPTIONS': {
-            'sslmode': 'require',
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=15000ms',
         },
+        'CONN_MAX_AGE': 60,  # Keep database connections alive for 60 seconds
     }
 }
 
@@ -134,3 +136,7 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Supabase Configuration
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_PUBLIC_KEY')

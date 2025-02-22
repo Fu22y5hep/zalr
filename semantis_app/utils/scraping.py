@@ -3,7 +3,7 @@ import re
 from time import sleep
 from docling.document_converter import DocumentConverter
 from typing import List, Optional
-from .models import Judgment
+from ..models import Judgment
 
 class ScrapingError(Exception):
     """Custom exception for scraping-related errors"""
