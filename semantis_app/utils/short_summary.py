@@ -1,4 +1,7 @@
 import os
+# Set tokenizers parallelism to false to avoid deadlocks
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import sys
 import django
 import logging
@@ -67,30 +70,33 @@ def generate_short_summary(text: str) -> Optional[str]:
 
 def process_case(judgment: Judgment) -> bool:
     try:
-        logger.info(f"Processing judgment: {judgment.neutral_citation}")
+        citation = judgment.full_citation or f"Judgment {judgment.id}"
+        logger.info(f"Processing judgment: {citation}")
         
         if not judgment.text_markdown:
-            logger.warning(f"No text found for judgment: {judgment.neutral_citation}")
+            logger.warning(f"No text found for judgment: {citation}")
             return False
             
         summary = generate_short_summary(judgment.text_markdown)
         if summary:
             judgment.short_summary = summary
             judgment.save()
-            logger.info(f"Successfully generated summary for {judgment.neutral_citation}")
+            logger.info(f"Successfully generated summary for {citation}")
             return True
             
-        logger.warning(f"Failed to generate summary for {judgment.neutral_citation}")
+        logger.warning(f"Failed to generate summary for {citation}")
         return False
         
     except Exception as e:
-        logger.error(f"Error processing judgment {judgment.neutral_citation}: {str(e)}")
+        logger.error(f"Error processing judgment {citation}: {str(e)}")
         return False
 
-def process_all_cases(batch_size: int = 20, delay: float = 2.0, force: bool = False):
+def process_all_cases(batch_size: int = 20, delay: float = 2.0, force: bool = False, target_court: Optional[str] = None) -> int:
     try:
         # Get total count of judgments that need processing
         query = Judgment.objects.filter(text_markdown__isnull=False)
+        if target_court:
+            query = query.filter(court=target_court)
         if not force:
             query = query.filter(short_summary__isnull=True)
             
@@ -98,11 +104,13 @@ def process_all_cases(batch_size: int = 20, delay: float = 2.0, force: bool = Fa
         
         if total_judgments == 0:
             logger.info("No judgments found that need processing")
-            return
+            return 0
             
         logger.info(f"Found {total_judgments} judgments that need processing")
         logger.info(f"Processing batch of {batch_size} judgments")
         logger.info(f"Force mode: {'enabled' if force else 'disabled'}")
+        if target_court:
+            logger.info(f"Target court: {target_court}")
         
         # Get judgments without summaries
         judgments = query.order_by('judgment_date')[:batch_size]  # Process in batches
@@ -122,8 +130,11 @@ def process_all_cases(batch_size: int = 20, delay: float = 2.0, force: bool = Fa
         logger.info(f"Processing completed. Successful: {successful}, Failed: {failed}")
         logger.info(f"Remaining judgments to process: {total_judgments - successful}")
         
+        return successful
+        
     except Exception as e:
         logger.error(f"Error in process_all_cases: {str(e)}")
+        return 0
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate short summaries for legal judgments')
@@ -133,6 +144,8 @@ if __name__ == "__main__":
                       help='Delay between processing judgments in seconds (default: 2.0)')
     parser.add_argument('--force', action='store_true',
                       help='Process all judgments, even those that already have summaries')
+    parser.add_argument('--target-court', type=str,
+                      help='Filter judgments by court')
     args = parser.parse_args()
     
     logger.info("Starting short summary generation process")
@@ -140,7 +153,8 @@ if __name__ == "__main__":
     logger.info(f"- Batch size: {args.batch_size}")
     logger.info(f"- Delay between judgments: {args.delay} seconds")
     logger.info(f"- Force mode: {'enabled' if args.force else 'disabled'}")
+    logger.info(f"- Target court: {args.target_court}")
     logger.info(f"- LLM Provider: openai")
     logger.info(f"- LLM Model: gpt-4o-mini")
-    process_all_cases(batch_size=args.batch_size, delay=args.delay, force=args.force)
-    logger.info("Short summary generation process completed")
+    successful = process_all_cases(batch_size=args.batch_size, delay=args.delay, force=args.force, target_court=args.target_court)
+    logger.info(f"Short summary generation process completed. Successful: {successful}")

@@ -54,4 +54,9 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
-.pytest_cache/ 
+.pytest_cache/
+
+# Process Flow Files
+process_flow_*.log
+process_flow_report_*.txt
+process_flow.log 

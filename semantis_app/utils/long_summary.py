@@ -3,7 +3,11 @@ from openai import OpenAI
 import os
 import django
 import time
+import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 django.setup()
 
@@ -59,7 +63,7 @@ def generate_completion(prompt):
     """Generate completion with retry logic."""
     try:
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",  # Using the specified model
+            model="o3-mini-2025-01-31",  # Using the specified model
             messages=[
                 {
                     "role": "user",
@@ -69,7 +73,7 @@ def generate_completion(prompt):
         )
         return completion
     except Exception as e:
-        print(f"Error in API call: {str(e)}")
+        logger.error(f"Error in API call: {str(e)}")
         raise  # Re-raise for retry
 
 def summarize_judgments(target_court=None):
@@ -77,51 +81,70 @@ def summarize_judgments(target_court=None):
     Generate summaries for high-scoring judgments.
     If target_court is provided, only process judgments from that court.
     """
-    # Get all judgments with reportability score >= 75 and no summary
-    judgments = Judgment.objects.filter(
-        reportability_score__gte=75,
-        long_summary__isnull=True
-    ).exclude(text_markdown__isnull=True)
+    try:
+        # Get all judgments with reportability score >= 75 and no summary
+        judgments = Judgment.objects.filter(
+            reportability_score__gte=75,
+            long_summary__isnull=True
+        ).exclude(text_markdown__isnull=True)
 
-    # Apply court filter if provided
-    if target_court:
-        judgments = judgments.filter(court=target_court)
+        # Apply court filter if provided
+        if target_court:
+            judgments = judgments.filter(court=target_court)
 
-    print(f"Found {judgments.count()} judgments to summarize")
+        total_judgments = judgments.count()
+        logger.info(f"Found {total_judgments} judgments to summarize")
 
-    # Process each judgment
-    for judgment in judgments:
-        try:
-            print(f"Processing judgment: {judgment.neutral_citation}")
+        successful = 0
+        failed = 0
 
-            # Prepare the prompt with the judgment text
-            prompt = PROMPT_TEMPLATE.format(text=judgment.text_markdown)
-
+        # Process each judgment
+        for i, judgment in enumerate(judgments, 1):
             try:
-                # Generate the completion with retry logic
-                completion = generate_completion(prompt)
-                
-                # Extract response
-                summary = completion.choices[0].message.content
+                citation = judgment.full_citation or f"Judgment {judgment.id}"
+                logger.info(f"Processing judgment {i}/{total_judgments}: {citation}")
 
-                # Update the judgment with the summary
-                judgment.long_summary = summary
-                judgment.save()
+                if not judgment.text_markdown:
+                    logger.warning(f"No text found for judgment: {citation}")
+                    continue
 
-                print(f"Successfully summarized judgment: {judgment.neutral_citation}")
-                
-                # Add a small delay between API calls
-                time.sleep(2)
+                # Prepare the prompt with the judgment text
+                prompt = PROMPT_TEMPLATE.format(text=judgment.text_markdown)
+
+                try:
+                    # Generate the completion with retry logic
+                    completion = generate_completion(prompt)
+                    
+                    # Extract response
+                    summary = completion.choices[0].message.content
+
+                    # Update the judgment with the summary
+                    judgment.long_summary = summary
+                    judgment.save()
+
+                    successful += 1
+                    logger.info(f"Successfully summarized judgment: {citation}")
+                    
+                    # Add a small delay between API calls
+                    if i < total_judgments:  # Don't delay after the last judgment
+                        time.sleep(2)
+
+                except Exception as e:
+                    failed += 1
+                    logger.error(f"Failed to generate summary for {citation}: {str(e)}")
+                    continue
 
             except Exception as e:
-                print(f"Failed to generate summary after retries for {judgment.neutral_citation}: {str(e)}")
+                failed += 1
+                logger.error(f"Error processing judgment {citation}: {str(e)}")
                 continue
 
-        except Exception as e:
-            print(f"Error processing judgment {judgment.neutral_citation}: {str(e)}")
-            continue
+        logger.info(f"Finished processing all judgments. Successful: {successful}, Failed: {failed}")
+        return successful
 
-    print("Finished processing all judgments")
+    except Exception as e:
+        logger.error(f"Fatal error in summarize_judgments: {str(e)}")
+        return 0
 
 if __name__ == "__main__":
     summarize_judgments()

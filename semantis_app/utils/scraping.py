@@ -106,26 +106,31 @@ def get_case_url(citation: str, court: str, year: int) -> Optional[str]:
         return f"https://www.saflii.org/za/cases/{court}/{year}/{number}.html"
     return None
 
-def scrape_court_year(court: str, year: int) -> List[Judgment]:
+def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = None) -> List[Judgment]:
     """
     Scrape all judgments from a specific court and year.
     
     Args:
         court: Court code (e.g., 'ZACC' for Constitutional Court)
         year: Year to scrape (e.g., 2024)
+        single_case_url: Optional URL for scraping a single case
         
     Returns:
         List of created Judgment objects
     """
     try:
-        base_url = f"https://www.saflii.org/za/cases/{court}/{year}/"
-        print(f"\nScraping {court} judgments from {year}")
-        
-        # Get citations from the year's page
-        citations = get_saflii_citations(base_url, target_court=court)
+        if single_case_url:
+            print(f"\nScraping single case from {single_case_url}")
+            # For single case, we'll use the URL directly
+            base_url = single_case_url
+            citations = get_saflii_citations(base_url, target_court=court)
+        else:
+            base_url = f"https://www.saflii.org/za/cases/{court}/{year}/"
+            print(f"\nScraping {court} judgments from {year}")
+            citations = get_saflii_citations(base_url, target_court=court)
         
         if not citations:
-            print(f"No cases found for {court} in {year}")
+            print(f"No cases found for {court} {year}")
             return []
         
         print(f"\nFound {len(citations)} cases to process\n")
@@ -136,7 +141,11 @@ def scrape_court_year(court: str, year: int) -> List[Judgment]:
         
         for citation in citations:
             try:
-                url = get_case_url(citation, court, year)
+                if single_case_url:
+                    url = single_case_url
+                else:
+                    url = get_case_url(citation, court, year)
+                    
                 if not url:
                     print(f"Could not generate URL for citation: {citation}")
                     continue
