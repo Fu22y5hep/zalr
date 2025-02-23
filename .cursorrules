@@ -11,6 +11,8 @@ The semantis app has been created in the django project.
 
 IMPORTANT LESSONS LEARNED:
 1. When using DoclingDocument, it requires a 'name' field in addition to 'text'. This is a mandatory requirement of the library.
+2. Use "gpt-4o-mini" as the default OpenAI model.
+3. NEVER modify or change prompts that are provided - leave them exactly as given.
 
 PLEASE ALWAYS UPDATE THESE RULES WITH THE TASK LIST NOTEPAD WITH THE TASKS YOU HAVE COMPLETED.
 

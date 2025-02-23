@@ -4,14 +4,19 @@ from typing import List, Dict, Any
 import voyageai
 from dotenv import load_dotenv
 from django.db import transaction
-from semantis_app.models import TextChunk, Judgment
+from semantis_app.models import Judgment
 import time
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 class EmbeddingGenerator:
     """
-    Handles the generation of embeddings for text chunks using voyage-law-2.
+    Handles the generation of embeddings for judgment chunks using voyage-law-2.
     """
     
     def __init__(self):
@@ -21,100 +26,86 @@ class EmbeddingGenerator:
         self.batch_size = 10  # Number of chunks to process in one batch
         self.sleep_time = 1  # Time to sleep between batches to avoid rate limits
     
-    def process_pending_chunks(self, batch_size: int = None) -> int:
+    def process_pending_judgments(self, batch_size: int = None) -> int:
         """
-        Process all chunks that haven't been embedded yet.
+        Process all judgments that have chunks but haven't been embedded yet.
         
         Args:
             batch_size: Optional override for batch size
             
         Returns:
-            int: Number of chunks processed
+            int: Number of judgments processed
         """
         if batch_size:
             self.batch_size = batch_size
             
         processed_count = 0
         
-        # Get chunks that haven't been embedded yet
-        pending_chunks = TextChunk.objects.filter(is_embedded=False).order_by('judgment', 'chunk_index')
+        # Get judgments that have chunks but aren't embedded yet
+        pending_judgments = Judgment.objects.filter(chunks__isnull=False, chunks_embedded=False)
+        total_judgments = pending_judgments.count()
+        logger.info(f"Found {total_judgments} judgments to process")
         
         # Process in batches
-        while True:
-            batch = list(pending_chunks[:self.batch_size])
-            if not batch:
-                break
-                
+        for judgment in pending_judgments:
             try:
-                self._process_batch(batch)
-                processed_count += len(batch)
-                print(f"Processed {processed_count} chunks so far")
-                time.sleep(self.sleep_time)  # Be nice to the API
+                if not judgment.chunks:  # Skip if no chunks (shouldn't happen due to filter)
+                    continue
+                    
+                # Get all chunks for this judgment
+                chunks = [chunk['content'] for chunk in judgment.chunks]
+                logger.info(f"Processing judgment {judgment.id} with {len(chunks)} chunks")
+                
+                # Process chunks in batches
+                embeddings = []
+                for i in range(0, len(chunks), self.batch_size):
+                    batch = chunks[i:i + self.batch_size]
+                    try:
+                        # Get embeddings for the batch
+                        response = self.client.embed(batch, model=self.model)
+                        # Extract embeddings from response.embeddings list
+                        batch_embeddings = [embedding for embedding in response.embeddings]
+                        embeddings.extend(batch_embeddings)
+                        logger.info(f"Processed batch {i//self.batch_size + 1} of {(len(chunks) + self.batch_size - 1)//self.batch_size}")
+                        time.sleep(self.sleep_time)  # Be nice to the API
+                    except Exception as e:
+                        logger.error(f"Error processing batch for judgment {judgment.id}: {str(e)}")
+                        # Log more details about the response
+                        logger.error(f"Response type: {type(response)}")
+                        logger.error(f"Response attributes: {dir(response)}")
+                        if hasattr(response, 'embeddings'):
+                            logger.error(f"Embeddings type: {type(response.embeddings)}")
+                            logger.error(f"First embedding: {response.embeddings[0] if response.embeddings else None}")
+                        continue
+                
+                if embeddings:
+                    # Calculate average embedding for the judgment
+                    avg_embedding = np.mean(embeddings, axis=0)
+                    
+                    # Save the embedding
+                    with transaction.atomic():
+                        judgment.vector_embedding = avg_embedding
+                        judgment.chunks_embedded = True
+                        judgment.save()
+                    
+                    processed_count += 1
+                    logger.info(f"Successfully processed judgment {judgment.id} ({processed_count}/{total_judgments})")
+                else:
+                    logger.warning(f"No embeddings generated for judgment {judgment.id}")
+                
             except Exception as e:
-                print(f"Error processing batch: {str(e)}")
-                # Continue with next batch even if one fails
+                logger.error(f"Error processing judgment {judgment.id}: {str(e)}")
                 continue
                 
         return processed_count
-    
-    def _process_batch(self, chunks: List[TextChunk]):
-        """
-        Process a batch of chunks: generate embeddings and save to database.
-        
-        Args:
-            chunks: List of TextChunk objects to process
-        """
-        # Extract text content from chunks
-        texts = [chunk.content for chunk in chunks]
-        
-        # Generate embeddings
-        try:
-            embeddings = self.client.embed(texts, model=self.model)
-        except Exception as e:
-            print(f"Error generating embeddings: {str(e)}")
-            raise
-        
-        # Save embeddings and update chunks in a transaction
-        with transaction.atomic():
-            for chunk, embedding in zip(chunks, embeddings):
-                # Convert embedding to numpy array for pgvector
-                embedding_array = np.array(embedding)
-                
-                # Update the judgment's embedding (average of its chunks)
-                self._update_judgment_embedding(chunk.judgment, embedding_array)
-                
-                # Mark chunk as embedded
-                chunk.is_embedded = True
-                chunk.save()
-    
-    def _update_judgment_embedding(self, judgment: Judgment, new_embedding: np.ndarray):
-        """
-        Update a judgment's embedding by averaging all its chunk embeddings.
-        
-        Args:
-            judgment: Judgment object to update
-            new_embedding: New embedding to incorporate
-        """
-        # Get current embedding if it exists
-        current_embedding = judgment.vector_embedding
-        
-        if current_embedding is None:
-            # First chunk, just use its embedding
-            judgment.vector_embedding = new_embedding
-        else:
-            # Average with existing embedding
-            embedded_chunks_count = judgment.chunks.filter(is_embedded=True).count()
-            judgment.vector_embedding = (current_embedding * embedded_chunks_count + new_embedding) / (embedded_chunks_count + 1)
-        
-        judgment.save()
 
 def generate_embeddings(batch_size: int = None):
     """
-    Convenience function to generate embeddings for all pending chunks.
+    Convenience function to generate embeddings for all pending judgments.
     
     Args:
         batch_size: Optional batch size override
     """
     generator = EmbeddingGenerator()
-    processed = generator.process_pending_chunks(batch_size)
-    print(f"Finished processing {processed} chunks") 
+    processed = generator.process_pending_judgments(batch_size)
+    logger.info(f"Finished processing {processed} judgments") 
