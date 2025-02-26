@@ -5,6 +5,7 @@ import django
 import time
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
+import re
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -16,43 +17,56 @@ client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 #client = OpenAI(api_key=os.getenv('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com")
 # Updated prompt template without bullet/number lists and without a system message
 PROMPT_TEMPLATE = """
-Summarize the provided judgment in the following structured legal format, presented in paragraphs without numbered or bulleted lists. Use precise terminology and replicate the sections, headings, and order below:
+Generate a markdown-formatted summary of the provided judgment using the following structure. Use proper markdown syntax including headers (#, ##, ###), emphasis (**bold**), and proper spacing:
 
-**Case Note**:
-Explain why the case is reportable (e.g., novel principles, application of existing law). MENTION KEY LEAGAL PRINCIPLES OR DOCTRINES THAT WERE APPLIED. Do not start the sentnece with "Thios case is reportable because..."
+# Case Note
+{text_here}
 
-**Cases Cited**:
-Identify all cases mentioned in the judgment. For each case, use the correct citation style (e.g., Case Name [Year] Court Abbreviation Volume/Report Page). Present them in paragraphs.
+## Reportability
+{text_here}
 
-**Legislation Cited**:
-List or describe any statutes or regulations referenced. For instance: Road Accident Fund Act Section 17(1)(b).
+## Cases Cited
+{text_here}
 
-**Rules of Court Cited**:
-List or describe any rules of court referenced. For instance: Rule 1.1(a) of the Rules of Court.
+## Legislation Cited
+{text_here}
 
+## Rules of Court Cited
+{text_here}
 
-**HEADNOTE**:
-**Summary**:
-Include one or two paragraphs on the core claim and the outcome.
-**Key Issues**:
-Briefly phrase the main legal issues in question form, if relevant.
-**Held**:
-State, in concise terms, the ultimate holding or decision.
+# HEADNOTE
 
-**THE FACTS**:
-Give a comprehensice account of the facts in no less than three paragraphs, including the parties, essential events, claims, and any relevant procedural history.
+## Summary
+{text_here}
 
-**THE ISSUES**:
-List the legal questions the court had to determine in paragraph form. For example, (1) Whether…, (2) Whether…
+## Key Issues
+{text_here}
 
-**ANALYSIS**:
-Detail the court's reasoning for each issu comprehensively in no less than three paragraphs. Explain how the court applied legal principles to the facts in paragraph form.
+## Held
+{text_here}
 
-**REMEDY**:
-Explain the relief granted or the final order of the court (e.g., application dismissed with costs).
+# THE FACTS
+{text_here}
 
-**LEGAL PRINCIPLES**:
-Describe the key legal principles or rules that guided the court's decision comprehensively in no less than three paragraphs. Include any direct quotes from cases or statutes where necessary, but present them within paragraphs without bullet points.
+# THE ISSUES
+{text_here}
+
+# ANALYSIS
+{text_here}
+
+# REMEDY
+{text_here}
+
+# LEGAL PRINCIPLES
+{text_here}
+
+Please ensure each section:
+1. Uses proper markdown headers (# for main sections, ## for subsections)
+2. Includes at least 3 well-formed paragraphs where specified
+3. Uses proper markdown formatting for emphasis (**bold** for important terms)
+4. Maintains proper spacing between sections (one blank line after each section)
+5. Uses proper citation formats
+6. Presents information in clear paragraphs without bullet points or numbered lists
 
 Full text:
 {text}
@@ -75,6 +89,72 @@ def generate_completion(prompt):
     except Exception as e:
         logger.error(f"Error in API call: {str(e)}")
         raise  # Re-raise for retry
+
+def clean_markdown(text: str) -> str:
+    """
+    Clean and format markdown text to ensure consistent styling.
+    
+    Args:
+        text: The markdown text to clean
+        
+    Returns:
+        str: Cleaned markdown text
+    """
+    # Ensure proper header formatting (space after #)
+    text = re.sub(r'#([^#\s])', r'# \1', text)
+    
+    # Ensure one blank line before headers
+    text = re.sub(r'([^\n])\n#', r'\1\n\n#', text)
+    
+    # Ensure proper bold formatting (no spaces inside **)
+    text = re.sub(r'\*\* ([^*]+) \*\*', r'**\1**', text)
+    
+    # Remove multiple consecutive blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Ensure proper citation formatting [YYYY] COURT XX
+    text = re.sub(r'\[(\d{4})\]\s*([A-Z]+)\s*(\d+)', r'[\1] \2 \3', text)
+    
+    # Ensure proper section references (e.g., Section 1(2)(a))
+    text = re.sub(r'section\s+(\d+)', r'Section \1', text, flags=re.IGNORECASE)
+    
+    # Remove any trailing whitespace
+    text = '\n'.join(line.rstrip() for line in text.split('\n'))
+    
+    return text.strip()
+
+def validate_markdown_structure(text: str) -> bool:
+    """
+    Validate that the markdown text contains all required sections.
+    
+    Args:
+        text: The markdown text to validate
+        
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    required_sections = [
+        '# Case Note',
+        '## Reportability',
+        '## Cases Cited',
+        '## Legislation Cited',
+        '# HEADNOTE',
+        '## Summary',
+        '## Key Issues',
+        '## Held',
+        '# THE FACTS',
+        '# THE ISSUES',
+        '# ANALYSIS',
+        '# REMEDY',
+        '# LEGAL PRINCIPLES'
+    ]
+    
+    for section in required_sections:
+        if section.lower() not in text.lower():
+            logger.warning(f"Missing required section: {section}")
+            return False
+    
+    return True
 
 def summarize_judgments(target_court=None):
     """
@@ -117,6 +197,14 @@ def summarize_judgments(target_court=None):
                     
                     # Extract response
                     summary = completion.choices[0].message.content
+
+                    # Clean and validate the markdown
+                    summary = clean_markdown(summary)
+                    
+                    if not validate_markdown_structure(summary):
+                        logger.error(f"Generated summary for {citation} is missing required sections")
+                        failed += 1
+                        continue
 
                     # Update the judgment with the summary
                     judgment.long_summary = summary

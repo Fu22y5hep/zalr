@@ -59,4 +59,10 @@ coverage.xml
 # Process Flow Files
 process_flow_*.log
 process_flow_report_*.txt
-process_flow.log 
+process_flow.log
+
+# Test Scripts
+test_*.py
+*_test.py
+test.py
+tests.py 

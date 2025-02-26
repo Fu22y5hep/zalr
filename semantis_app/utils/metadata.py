@@ -174,21 +174,218 @@ class MetadataParser:
 
     def extract_judges(self) -> Optional[str]:
         """Extract the judges' names from the judgment."""
-        judge_patterns = [
-            r'(?:Before|Coram):\s*(.*?)(?:\n|$)',
-            r'(\w+\s+[AJ|JA|J]+)(?:\s+and\s+)?',  # Matches "MAYA JA", "VICTOR AJ", etc.
-            r'((?:[A-Z][a-z]+\s+)+(?:AJ|JA|J))',  # Matches "Maya JA", "Victor AJ", etc.
+        # Common judicial titles and their variations
+        JUDICIAL_TITLES = {
+            'CJ': 'Chief Justice',
+            'DCJ': 'Deputy Chief Justice',
+            'ADCJ': 'Acting Deputy Chief Justice',
+            'P': 'President',
+            'JP': 'Judge President',
+            'DJP': 'Deputy Judge President',
+            'JA': 'Judge of Appeal',
+            'AJA': 'Acting Judge of Appeal',
+            'J': 'Judge',
+            'AJ': 'Acting Judge'
+        }
+        
+        # Words that might be mistaken for judge names but should be ignored
+        IGNORE_WORDS = {
+            'court', 'appeal', 'judgment', 'justice', 'rights', 'analysis',
+            'high', 'supreme', 'constitutional', 'environmental', 'administrative',
+            'chief', 'deputy', 'acting', 'president', 'judge', 'judges',
+            'applicant', 'respondent', 'appellant', 'defendant', 'plaintiff',
+            'party', 'parties', 'case', 'matter', 'hearing', 'order', 'judgment',
+            'application', 'review', 'appeal', 'motion', 'petition', 'south',
+            'african', 'africa', 'republic', 'state', 'government', 'minister',
+            'department', 'director', 'general', 'public', 'private', 'company',
+            'corporation', 'limited', 'ltd', 'pty', 'inc', 'incorporated',
+            'association', 'society', 'trust', 'foundation', 'institute',
+            'council', 'board', 'committee', 'commission', 'authority',
+            'municipality', 'municipal', 'local', 'provincial', 'national',
+            'federal', 'central', 'eastern', 'western', 'northern', 'southern',
+            'upper', 'lower', 'high', 'supreme', 'constitutional', 'appeal',
+            'district', 'regional', 'division', 'branch', 'section', 'unit',
+            'predator', 'leopard', 'animal', 'other', 'first', 'second', 'third',
+            'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',
+            'executor', 'estate', 'late', 'scheme', 'medical', 'profmed'
+        }
+        
+        def is_valid_judge_name(name: str) -> bool:
+            """Check if a name appears to be a valid judge name."""
+            # Must end with a judicial title
+            if not any(name.endswith(f" {title}") for title in JUDICIAL_TITLES):
+                return False
+                
+            # Get the name part without the title
+            name_part = re.sub(r'\s+(?:' + '|'.join(JUDICIAL_TITLES) + ')$', '', name).strip()
+            
+            # Convert to lowercase for checking against ignore words
+            name_lower = name_part.lower()
+            
+            # Check if it's in the ignore list
+            if name_lower in IGNORE_WORDS:
+                return False
+                
+            # Check if any word in the name is in the ignore list
+            if any(word.lower() in IGNORE_WORDS for word in name_part.split()):
+                return False
+                
+            # Must be a reasonable length
+            if len(name_part) < 3 or len(name_part) > 50:
+                return False
+                
+            # Must contain at least one letter
+            if not re.search(r'[A-Za-z]', name_part):
+                return False
+                
+            return True
+        
+        def clean_text(text: str) -> str:
+            """Clean text for better parsing."""
+            # Remove markdown headers and formatting
+            text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+            text = re.sub(r'\*\*.*?\*\*', '', text)  # Remove bold
+            text = re.sub(r'_.*?_', '', text)        # Remove italics
+            text = re.sub(r'\[.*?\]', '', text)      # Remove links
+            
+            # Convert multiple newlines to single newline
+            text = re.sub(r'\n\s*\n', '\n', text)
+            
+            # Normalize whitespace
+            text = re.sub(r'\s+', ' ', text)
+            
+            # Remove multiple spaces after punctuation
+            text = re.sub(r'([.,;:])\s+', r'\1 ', text)
+            
+            # Remove excessive spaces around parentheses
+            text = re.sub(r'\s*\(\s*', '(', text)
+            text = re.sub(r'\s*\)\s*', ') ', text)
+            
+            # Remove excessive spaces at line ends
+            text = re.sub(r'\s+$', '', text, flags=re.MULTILINE)
+            
+            return text.strip()
+        
+        def normalize_judge_name(name: str) -> str:
+            """Normalize a judge's name to handle variations."""
+            # Remove any markdown or special characters
+            name = re.sub(r'[*_\[\]`]', '', name)
+            
+            # Handle ALL CAPS
+            if name.isupper():
+                words = name.split()
+                # Keep judicial titles in original form
+                name = ' '.join(w if w in JUDICIAL_TITLES else w.title() for w in words)
+            
+            # Remove extra whitespace
+            name = ' '.join(name.split())
+            
+            # Handle spaced titles (e.g., "A J" -> "AJ")
+            for title in JUDICIAL_TITLES:
+                # Try both spaced and unspaced versions
+                spaced_title = ' '.join(title)
+                if name.endswith(f" {spaced_title}"):
+                    return name[:-len(spaced_title)-1] + f" {title}"
+                elif name.endswith(spaced_title):
+                    return name[:-len(spaced_title)] + title
+                elif name.endswith(f" {title}"):
+                    return name  # Already in correct format
+                elif name.endswith(title):
+                    return name[:-len(title)] + f" {title}"
+            
+            return name
+        
+        def extract_names_from_text(text: str) -> set:
+            """Extract judge names from a text section using various patterns."""
+            names = set()
+            
+            # Pattern to match judge sections
+            judge_section_patterns = [
+                # Standard formats
+                r'(?:Before|Coram|Heard[ ]before|Judgment[ ]by|Delivered[ ]by|Written[ ]by|Present)[:.]?[ ]*(.*?)(?=\n[ ]*\n|\n[ ]*\[|\Z)',
+                # Concurring format
+                r'\[[\d ]+\][ ]*([A-Z][a-z]+(?:[ ]+[A-Z][a-z]+)*[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r'))[ ]*[\(:]',
+                # List of judges format
+                r'(?m)^([A-Z][a-z]+(?:[ ]+[A-Z][a-z]+)*[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r'))(?:[ ]*[,.]|$)',
+                # ALL CAPS format
+                r'(?m)^([A-Z]+(?:[ ]+[A-Z]+)*[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r'))(?:[ ]*[,.]|$)',
+                # Judgment indicator
+                r'Judgment[ ]of[ ]([A-Z][a-z]+(?:[ ]+[A-Z][a-z]+)*[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r'))',
+                # Colon format
+                r'([A-Z][a-z]+(?:[ ]+[A-Z][a-z]+)*[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r')):',
+                # Parenthetical format
+                r'\(([A-Z][a-z]+(?:[ ]+[A-Z][a-z]+)*[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r'))\)',
+                # ALL CAPS with title
+                r'([A-Z]+(?:[ ]+[A-Z]+)*[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r'))',
+                # ALL CAPS name followed by title
+                r'([A-Z]+(?:[ ]+[A-Z]+)+)[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r')',
+                # Mixed case name with optional initials
+                r'([A-Z][a-z]+(?:[ ]+(?:[A-Z]\.?|[A-Z][a-z]+))+[ ]+(?:' + '|'.join(JUDICIAL_TITLES) + r'))'
+            ]
+            
+            for pattern in judge_section_patterns:
+                matches = re.finditer(pattern, text, re.MULTILINE | re.DOTALL)
+                for match in matches:
+                    section = match.group(1).strip()
+                    
+                    # If section contains a colon, take the part after it
+                    if ':' in section:
+                        section = section.split(':', 1)[1].strip()
+                    
+                    # Split on common separators
+                    parts = re.split(r'\s*(?:,|\band\b|&|;|\bet\s+al\b\.?)\s*', section)
+                    
+                    for part in parts:
+                        judge = normalize_judge_name(part.strip())
+                        if judge and is_valid_judge_name(judge):
+                            names.add(judge)
+            
+            return names
+        
+        # Clean and prepare text sections
+        text_sections = [
+            clean_text(self.first_50_lines),  # Header section
+            clean_text(self.text[:1000])  # First 1000 chars
         ]
         
-        judges = []
-        for pattern in judge_patterns:
-            matches = re.finditer(pattern, self.first_50_lines)
-            for match in matches:
-                judge = match.group(1).strip()
-                if judge and len(judge) > 2:  # Avoid short matches
-                    judges.append(judge)
+        judges = set()  # Use a set to avoid duplicates
         
-        return ', '.join(judges) if judges else None
+        # First try to find a dedicated judge section
+        for text in text_sections:
+            # Look for sections that might list judges
+            section_headers = [
+                r'(?:Judges?|Court|Bench|Panel|Coram|Present)[:.][ ]*(.*?)(?=\n\n|\n[A-Z]|\Z)',
+                r'(?:Before|Heard[ ]before)[:.][ ]*(.*?)(?=\n\n|\n[A-Z]|\Z)',
+                r'(?:Judgment|Order)[ ]by[:.][ ]*(.*?)(?=\n\n|\n[A-Z]|\Z)',
+                r'(?:Delivered|Written)[ ]by[:.][ ]*(.*?)(?=\n\n|\n[A-Z]|\Z)'
+            ]
+            
+            for header in section_headers:
+                match = re.search(header, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+                if match:
+                    section = match.group(1).strip()
+                    # Split on common separators
+                    parts = re.split(r'\s*(?:,|\band\b|&|;|\bet\s+al\b\.?)\s*', section)
+                    for part in parts:
+                        judge = normalize_judge_name(part.strip())
+                        if judge and is_valid_judge_name(judge):
+                            judges.add(judge)
+        
+        # If we didn't find judges in a dedicated section, try pattern matching
+        if not judges:
+            for text in text_sections:
+                judges.update(extract_names_from_text(text))
+        
+        # If we still found no judges, try the first paragraph after [1]
+        if not judges:
+            first_para_match = re.search(r'\[1\](.*?)(?=\[2\]|\Z)', self.text, re.DOTALL)
+            if first_para_match:
+                first_para = clean_text(first_para_match.group(1))
+                judges.update(extract_names_from_text(first_para))
+        
+        # Convert set to sorted list and join
+        judge_list = sorted(list(set(judges)))  # Extra set() to ensure no duplicates
+        return ', '.join(judge_list) if judge_list else None
 
     @staticmethod
     def update_judgment_metadata(judgment: Judgment) -> bool:

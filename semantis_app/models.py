@@ -25,6 +25,7 @@ class Judgment(models.Model):
     chunks_embedded = models.BooleanField(default=False)
     case_number = models.CharField(max_length=25, null=True, blank=True)
     saflii_url = models.URLField(max_length=200, null=True, blank=True)# Track if chunks have been embedded
+    featured = models.BooleanField(default=False)  # Track if this is the featured judgment of the week
 
     def __str__(self):
         return f"{self.title} ({self.case_number})"
