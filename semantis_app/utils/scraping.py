@@ -4,6 +4,7 @@ from time import sleep
 from docling.document_converter import DocumentConverter
 from typing import List, Optional
 from ..models import Judgment
+from .metadata import MetadataParser
 
 class ScrapingError(Exception):
     """Custom exception for scraping-related errors"""
@@ -135,7 +136,7 @@ def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = No
         
         print(f"\nFound {len(citations)} cases to process\n")
         
-        # Use docling's DocumentConverter
+        # Use docling's DocumentConverter for document conversion only
         converter = DocumentConverter()
         judgments = []
         
@@ -176,6 +177,22 @@ def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = No
                     text_markdown=cleaned_text,
                     saflii_url=url
                 )
+                
+                # Process metadata automatically after creating judgment
+                try:
+                    print("Extracting metadata using regex...")
+                    updated = MetadataParser.update_judgment_metadata(judgment)
+                    if updated:
+                        print(f"Metadata extracted and saved for {citation}")
+                    else:
+                        print(f"No metadata updates needed for {citation}")
+                except Exception as e:
+                    print(f"Error extracting metadata: {str(e)}")
+                    # Set court field explicitly if it wasn't set by metadata parser
+                    if not judgment.court and 'ZASCA' in url:
+                        judgment.court = 'ZASCA'
+                        judgment.save()
+                        print(f"Manually set court=ZASCA for {citation}")
                 
                 judgments.append(judgment)
                 print(f"Successfully processed: {citation}")

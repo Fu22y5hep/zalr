@@ -1,9 +1,15 @@
 import re
+import os
+import yaml
 from datetime import datetime
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Set
 from django.db.models import Q
+from django.conf import settings
 from ..models import Judgment
 import logging
+# Remove docling imports
+# from .docling_processor import DoclingProcessor
+# from docling.datamodel.document import DoclingDocument
 
 logger = logging.getLogger(__name__)
 
@@ -13,44 +19,91 @@ class MetadataParser:
     Handles extraction of citation, court, case number, date, and judges.
     """
     
-    # Common South African court codes - no longer mapping to full names
-    COURT_CODES = {
-        'ZACC',  # Constitutional Court
-        'ZASCA',  # Supreme Court of Appeal
-        'ZAGPJHC',  # Gauteng Local Division, Johannesburg
-        'ZAGPPHC',  # Gauteng Division, Pretoria
-        'ZAWCHC',  # Western Cape Division, Cape Town
-        'ZAKZDHC',  # KwaZulu-Natal Division, Durban
-        'ZAECG',  # Eastern Cape Division, Grahamstown
-    }
-
+    # Court codes and patterns loaded from YAML file
+    _COURT_CODES = None
+    _COURT_PATTERNS = None
+    
+    @classmethod
+    def load_courts_from_yaml(cls) -> tuple:
+        """
+        Load court codes and names from the courts.yaml file.
+        Returns a tuple of (court_codes_set, court_patterns_list)
+        """
+        try:
+            yaml_path = os.path.join(settings.BASE_DIR, 'semantis_app', 'config', 'courts.yaml')
+            logger.info(f"Loading courts from: {yaml_path}")
+            
+            with open(yaml_path, 'r', encoding='utf-8') as f:
+                data = f.read()
+            
+            # Extract court codes and names using regex
+            court_codes = set()
+            court_patterns = []
+            
+            # Pattern to match court entries like "**Court Name** - CODE"
+            pattern = r'\*\*(.*?)\*\*\s+–\s+([A-Z]+)'
+            
+            for match in re.finditer(pattern, data):
+                court_name, court_code = match.groups()
+                court_codes.add(court_code)
+                
+                # Create a regex pattern to match this court name in text
+                # Convert the court name to a regex pattern
+                name_pattern = court_name.replace(',', r'.*')  # Allow text between parts
+                name_pattern = re.sub(r'\s+', r'\\s+', name_pattern)  # Match whitespace
+                
+                # Add to patterns list with the corresponding court code
+                court_patterns.append((name_pattern, court_code))
+            
+            return court_codes, court_patterns
+            
+        except Exception as e:
+            logger.error(f"Error loading courts from YAML: {str(e)}")
+            return set(), []
+    
+    @classmethod
+    def get_court_codes(cls) -> Set[str]:
+        """Get the set of valid court codes"""
+        if cls._COURT_CODES is None:
+            cls._COURT_CODES, cls._COURT_PATTERNS = cls.load_courts_from_yaml()
+        return cls._COURT_CODES
+    
+    @classmethod
+    def get_court_patterns(cls) -> List[Tuple[str, str]]:
+        """Get the list of court name patterns and their codes"""
+        if cls._COURT_PATTERNS is None:
+            cls._COURT_CODES, cls._COURT_PATTERNS = cls.load_courts_from_yaml()
+        return cls._COURT_PATTERNS
+    
     def __init__(self, text: str, title: Optional[str] = None):
         self.text = text
         self.title = title
-        self.lines = text.split('\n')
-        self.first_50_lines = '\n'.join(self.lines[:50])  # Most metadata is in the header
-
-    def extract_all(self) -> Dict[str, any]:
-        """
-        Extract all metadata fields from the judgment text.
-        First tries to parse from title, then falls back to full text search.
-        """
-        # First try to get metadata from title
-        metadata = self.parse_title() if self.title else {}
+        # Remove docling document creation
+        # self.docling_doc = None
         
-        # For any missing fields, try to extract from the full text
-        if not any(key in metadata for key in ['full_citation', 'neutral_citation_year', 'neutral_citation_number']):
-            citation_data = self.extract_citation()
-            if citation_data:
-                metadata.update(citation_data)
-        if 'court' not in metadata:
-            metadata['court'] = self.extract_court()
-        if 'case_number' not in metadata:
-            metadata['case_number'] = self.extract_case_number()
-        if 'judgment_date' not in metadata:
-            metadata['judgment_date'] = self.extract_date()
-        if 'judges' not in metadata:
-            metadata['judges'] = self.extract_judges()
+        # Try to create DoclingDocument for more accurate extraction
+        # if text:
+        #     doc_name = title if title else "judgment"
+        #     self.docling_doc = DoclingProcessor.convert_html_to_docling(text, doc_name)
+    
+    def extract_all(self) -> Dict[str, any]:
+        """Extract all metadata from judgment text"""
+        metadata = {}
+        
+        # Extract metadata from title if available
+        # This is the ONLY source for all metadata except judges
+        if self.title:
+            title_data = self.parse_title()
+            metadata.update(title_data)
+        
+        # Do NOT fall back to text extraction for any fields except judges
+        # The following lines have been removed to ensure we only use title-based extraction
+        # for court, citation, case number, and date
+
+        # Always extract judges from the main text, not from the title
+        judges = self.extract_judges()
+        if judges:
+            metadata["judges"] = judges
         
         return metadata
 
@@ -69,29 +122,54 @@ class MetadataParser:
 
         metadata = {}
         
-        # Extract case number
-        case_number_match = re.search(r'\(([A-Z]+\s*\d+/\d+)\)', self.title)
-        if case_number_match:
-            metadata['case_number'] = case_number_match.group(1)
-
-        # Extract court, year, and neutral citation number
+        # Extract case name (parties) - find the part before the first case number or citation
+        case_name_match = re.search(r'^(.*?)(?:\(\d+|\([A-Z]+\s+\d+|\[\d{4}\])', self.title)
+        if case_name_match:
+            case_name = case_name_match.group(1).strip()
+            # Clean up case name
+            case_name = re.sub(r'\s+', ' ', case_name)
+            metadata['case_name'] = case_name
+        
+        # Extract neutral citation components [YYYY] COURT XX
         neutral_citation_match = re.search(r'\[(\d{4})\]\s+([A-Z]+)\s+(\d+)', self.title)
         if neutral_citation_match:
             year, court_code, number = neutral_citation_match.groups()
-            if court_code in self.COURT_CODES:
+            
+            if court_code in self.get_court_codes():
                 metadata['court'] = court_code
                 metadata['full_citation'] = f"[{year}] {court_code} {number}"
                 metadata['neutral_citation_year'] = int(year)
                 metadata['neutral_citation_number'] = int(number)
+        
+        # Extract case number patterns
+        case_number_patterns = [
+            r'\(([A-Z]+\s*\d+/\d+(?:/\d+)?)\)',  # (CCT 123/2022)
+            r'\((\d+/\d+(?:/\d+)?)\)',           # (123/2022)
+            r'Case\s+No\.?\s*(\d+/\d+(?:/\d+)?)', # Case No. 123/2022
+            r'(\d+/\d+)(?:\s|\)|\]|$)'           # 123/2022 followed by space, bracket, or end
+        ]
+        
+        for pattern in case_number_patterns:
+            match = re.search(pattern, self.title)
+            if match:
+                metadata['case_number'] = match.group(1)
+                break
 
-        # Extract date
-        date_match = re.search(r'\((\d{1,2}\s+[A-Za-z]+\s+\d{4})\)', self.title)
-        if date_match:
-            try:
-                date_str = date_match.group(1)
-                metadata['judgment_date'] = datetime.strptime(date_str, '%d %B %Y').date()
-            except ValueError:
-                pass
+        # Extract date - look for date at the end of the title
+        date_patterns = [
+            r'\((\d{1,2}\s+[A-Za-z]+\s+\d{4})\)',  # (12 April 2024)
+            r'(\d{1,2}\s+[A-Za-z]+\s+\d{4})$',      # At end of title with no parentheses
+        ]
+        
+        for pattern in date_patterns:
+            date_match = re.search(pattern, self.title)
+            if date_match:
+                try:
+                    date_str = date_match.group(1)
+                    metadata['judgment_date'] = datetime.strptime(date_str, '%d %B %Y').date()
+                    break
+                except ValueError:
+                    continue
 
         return metadata
 
@@ -100,11 +178,11 @@ class MetadataParser:
         # Look for neutral citation pattern only
         citation_pattern = r'\[(\d{4})\]\s+([A-Z]+)\s+(\d+)'  # [2024] ZACC 31
         
-        match = re.search(citation_pattern, self.first_50_lines)
+        match = re.search(citation_pattern, self.text)
         if match:
             year, court_code, number = match.groups()
             return {
-                'full_citation': self.first_50_lines[match.start():match.end()].strip(),
+                'full_citation': self.text[match.start():match.end()].strip(),
                 'neutral_citation_year': int(year),
                 'neutral_citation_number': int(number)
             }
@@ -114,25 +192,15 @@ class MetadataParser:
     def extract_court(self) -> Optional[str]:
         """Extract the court code from the judgment."""
         # First try to find court code
-        for code in self.COURT_CODES:
-            if re.search(rf'\b{code}\b', self.first_50_lines):
+        for code in self.get_court_codes():
+            if re.search(rf'\b{code}\b', self.text):
                 return code
         
         # Look for court name in header and map to code
-        court_patterns = [
-            (r'CONSTITUTIONAL\s+COURT', 'ZACC'),
-            (r'SUPREME\s+COURT\s+OF\s+APPEAL', 'ZASCA'),
-            (r'GAUTENG.*JOHANNESBURG', 'ZAGPJHC'),
-            (r'GAUTENG.*PRETORIA', 'ZAGPPHC'),
-            (r'WESTERN\s+CAPE', 'ZAWCHC'),
-            (r'KWAZULU-NATAL.*DURBAN', 'ZAKZDHC'),
-            (r'EASTERN\s+CAPE.*GRAHAMSTOWN', 'ZAECG'),
-        ]
-        
-        for pattern, code in court_patterns:
-            if re.search(pattern, self.first_50_lines, re.IGNORECASE):
+        for pattern, code in self.get_court_patterns():
+            if re.search(pattern, self.text, re.IGNORECASE):
                 return code
-        
+                
         return None
 
     def extract_case_number(self) -> Optional[str]:
@@ -145,7 +213,7 @@ class MetadataParser:
         ]
         
         for pattern in case_patterns:
-            match = re.search(pattern, self.first_50_lines)
+            match = re.search(pattern, self.text)
             if match:
                 return match.group(1).strip()
         
@@ -163,7 +231,7 @@ class MetadataParser:
         ]
         
         for pattern, date_format in date_patterns:
-            match = re.search(pattern, self.first_50_lines)
+            match = re.search(pattern, self.text)
             if match:
                 try:
                     return datetime.strptime(match.group(1), date_format).date()
@@ -327,25 +395,28 @@ class MetadataParser:
                 matches = re.finditer(pattern, text, re.MULTILINE | re.DOTALL)
                 for match in matches:
                     section = match.group(1).strip()
-                    
+        
                     # If section contains a colon, take the part after it
                     if ':' in section:
                         section = section.split(':', 1)[1].strip()
-                    
+        
                     # Split on common separators
                     parts = re.split(r'\s*(?:,|\band\b|&|;|\bet\s+al\b\.?)\s*', section)
-                    
+            
                     for part in parts:
                         judge = normalize_judge_name(part.strip())
                         if judge and is_valid_judge_name(judge):
                             names.add(judge)
-            
+                
             return names
-        
+            
         # Clean and prepare text sections
         text_sections = [
-            clean_text(self.first_50_lines),  # Header section
-            clean_text(self.text[:1000])  # First 1000 chars
+            clean_text(self.text[:1000]),  # First 1000 chars
+            clean_text(self.text[1000:2000]),  # Next 1000 chars
+            clean_text(self.text[2000:3000]),  # Next 1000 chars
+            clean_text(self.text[3000:4000]),  # Next 1000 chars
+            clean_text(self.text[4000:5000]),  # Next 1000 chars
         ]
         
         judges = set()  # Use a set to avoid duplicates
@@ -390,77 +461,68 @@ class MetadataParser:
     @staticmethod
     def update_judgment_metadata(judgment: Judgment) -> bool:
         """
-        Update a judgment's metadata by parsing its text and title.
-        
-        Args:
-            judgment: The Judgment instance to update
-            
-        Returns:
-            bool: True if any metadata was updated, False otherwise
+        Update a judgment's metadata fields by parsing its text.
+        Returns True if any fields were updated.
         """
-        if not judgment.text_markdown:
+        try:
+            if not judgment.text_markdown:
+                logger.warning(f"No text available for judgment {judgment.id}")
+                return False
+                
+            # Create metadata parser with text and title
+            parser = MetadataParser(judgment.text_markdown, judgment.case_name)
+            metadata = parser.extract_all()
+            
+            # Track if any fields were updated
+            updated = False
+            
+            # Update fields if they're empty or if we have new data
+            for field, value in metadata.items():
+                if value and hasattr(judgment, field):
+                    current_value = getattr(judgment, field)
+                    if not current_value or (field in ['court', 'neutral_citation_year', 'neutral_citation_number']):
+                        setattr(judgment, field, value)
+                        updated = True
+            
+            if updated:
+                judgment.save()
+                logger.info(f"Updated metadata for judgment {judgment.id}")
+            else:
+                logger.info(f"No metadata updates needed for judgment {judgment.id}")
+                
+            return updated
+                
+        except Exception as e:
+            logger.error(f"Error updating judgment metadata: {str(e)}")
             return False
-            
-        parser = MetadataParser(judgment.text_markdown, judgment.title)
-        metadata = parser.extract_all()
-        
-        # Track if any fields were updated
-        updated = False
-        
-        for field, value in metadata.items():
-            if value and not getattr(judgment, field):
-                setattr(judgment, field, value)
-                updated = True
-        
-        if updated:
-            judgment.save()
-            
-        return updated
 
 def process_missing_metadata(batch_size: int = 50) -> int:
     """
-    Process judgments with missing metadata in batches.
-    
-    Args:
-        batch_size: Number of judgments to process in each batch
-        
-    Returns:
-        Number of judgments updated
+    Process judgments with missing metadata fields.
+    Returns the number of judgments updated.
     """
     try:
-        # Get judgments with any missing metadata
-        query = (
-            Q(full_citation__isnull=True) |
-            Q(court__isnull=True) |
+        # Find judgments with missing important metadata
+        judgments = Judgment.objects.filter(
+            Q(court__isnull=True) | 
+            Q(neutral_citation_year__isnull=True) |
+            Q(neutral_citation_number__isnull=True) |
             Q(case_number__isnull=True) |
             Q(judgment_date__isnull=True) |
             Q(judges__isnull=True)
-        )
-        
-        judgments = Judgment.objects.filter(query)[:batch_size]
-        total_judgments = judgments.count()
-        logger.info(f"Found {total_judgments} judgments with missing metadata")
+        ).exclude(
+            text_markdown__isnull=True
+        )[:batch_size]
         
         updated_count = 0
-        error_count = 0
         
-        for i, judgment in enumerate(judgments, 1):
-            try:
-                logger.info(f"Processing judgment {i}/{total_judgments} (ID: {judgment.id})")
-                if MetadataParser.update_judgment_metadata(judgment):
-                    updated_count += 1
-                    logger.info(f"Successfully updated metadata for judgment {judgment.id}")
-                else:
-                    logger.warning(f"No metadata updates needed for judgment {judgment.id}")
-                    
-            except Exception as e:
-                error_count += 1
-                logger.error(f"Error processing judgment {judgment.id}: {str(e)}")
-                continue
+        for judgment in judgments:
+            updated = MetadataParser.update_judgment_metadata(judgment)
+            if updated:
+                updated_count += 1
         
-        logger.info(f"Metadata processing complete. Updated: {updated_count}, Errors: {error_count}")
         return updated_count
-
+        
     except Exception as e:
-        logger.error(f"Error in process_missing_metadata: {str(e)}")
+        logger.error(f"Error processing missing metadata: {str(e)}")
         return 0

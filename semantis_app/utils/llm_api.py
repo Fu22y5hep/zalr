@@ -9,8 +9,24 @@ from dotenv import load_dotenv
 from pathlib import Path
 import sys
 import base64
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Dict, Any
 import mimetypes
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Define default models for each provider
+DEFAULT_MODELS = {
+    "openai": "gpt-4o-mini",  # Updated to use gpt-4o-mini as default
+    "azure": "gpt-4",
+    "anthropic": "claude-3-haiku-20240307",
+    "google": "gemini-1.0-pro"
+}
+
+class LLMException(Exception):
+    """Exception raised for errors in the LLM API calls."""
+    pass
 
 def load_environment():
     """Load environment variables from .env files in order of precedence"""
@@ -66,58 +82,54 @@ def encode_image_file(image_path: str) -> tuple[str, str]:
     return encoded_string, mime_type
 
 def create_llm_client(provider="openai"):
-    if provider == "openai":
-        api_key = os.getenv('OPENAI_API_KEY')
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
-        return OpenAI(
-            api_key=api_key
-        )
-    elif provider == "azure":
-        api_key = os.getenv('AZURE_OPENAI_API_KEY')
-        if not api_key:
-            raise ValueError("AZURE_OPENAI_API_KEY not found in environment variables")
-        return AzureOpenAI(
-            api_key=api_key,
-            api_version="2024-08-01-preview",
-            azure_endpoint="https://msopenai.openai.azure.com"
-        )
-    elif provider == "deepseek":
-        api_key = os.getenv('DEEPSEEK_API_KEY')
-        if not api_key:
-            raise ValueError("DEEPSEEK_API_KEY not found in environment variables")
-        return OpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com/v1",
-        )
-    elif provider == "siliconflow":
-        api_key = os.getenv('SILICONFLOW_API_KEY')
-        if not api_key:
-            raise ValueError("SILICONFLOW_API_KEY not found in environment variables")
-        return OpenAI(
-            api_key=api_key,
-            base_url="https://api.siliconflow.cn/v1"
-        )
-    elif provider == "anthropic":
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found in environment variables")
-        return Anthropic(
-            api_key=api_key
-        )
-    elif provider == "gemini":
-        api_key = os.getenv('GOOGLE_API_KEY')
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY not found in environment variables")
-        genai.configure(api_key=api_key)
-        return genai
-    elif provider == "local":
-        return OpenAI(
-            base_url="http://192.168.180.137:8006/v1",
-            api_key="not-needed"
-        )
-    else:
-        raise ValueError(f"Unsupported provider: {provider}")
+    """
+    Create a client for the specified LLM provider.
+    
+    Args:
+        provider: The LLM provider to use (openai, azure, anthropic, google)
+        
+    Returns:
+        A client object for the specified provider
+    """
+    try:
+        if provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise LLMException("OPENAI_API_KEY environment variable not set")
+            return OpenAI(api_key=api_key)
+            
+        elif provider == "azure":
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+            
+            if not all([api_key, endpoint, api_version]):
+                raise LLMException("One or more Azure OpenAI environment variables not set")
+            
+            return AzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=endpoint,
+                api_version=api_version
+            )
+            
+        elif provider == "anthropic":
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise LLMException("ANTHROPIC_API_KEY environment variable not set")
+            return Anthropic(api_key=api_key)
+            
+        elif provider == "google":
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                raise LLMException("GOOGLE_API_KEY environment variable not set")
+            genai.configure(api_key=api_key)
+            return genai
+            
+        else:
+            raise LLMException(f"Unsupported provider: {provider}")
+            
+    except Exception as e:
+        raise LLMException(f"Error creating {provider} client: {str(e)}")
 
 def query_llm(prompt: str, client=None, model=None, provider="openai", image_path: Optional[str] = None) -> Optional[str]:
     """
@@ -238,6 +250,99 @@ def query_llm(prompt: str, client=None, model=None, provider="openai", image_pat
     except Exception as e:
         print(f"Error querying LLM: {e}", file=sys.stderr)
         return None
+
+def generate_completion(
+    prompt: str, 
+    model: Optional[str] = None, 
+    provider: str = "openai", 
+    max_tokens: int = 1000, 
+    temperature: float = 0.7,
+    response_format: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Generate a completion for the provided prompt using the specified provider and model.
+    
+    Args:
+        prompt: The prompt to generate a completion for
+        model: The model to use (defaults to provider's default if not specified)
+        provider: The LLM provider to use (openai, azure, anthropic, google)
+        max_tokens: Maximum number of tokens to generate
+        temperature: Temperature for generation (higher = more creative, lower = more deterministic)
+        response_format: Format specification for the response (JSON, etc.)
+        
+    Returns:
+        The generated completion text
+        
+    Raises:
+        LLMException: If there is an error in the API call
+    """
+    try:
+        client = create_llm_client(provider)
+        
+        # Use default model if not specified
+        if not model:
+            model = DEFAULT_MODELS.get(provider, DEFAULT_MODELS["openai"])
+            
+        logger.info(f"Using {provider} model: {model}")
+        
+        if provider == "openai":
+            completion_params = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            
+            # Add response format if specified
+            if response_format:
+                completion_params["response_format"] = response_format
+                
+            response = client.chat.completions.create(**completion_params)
+            return response.choices[0].message.content
+            
+        elif provider == "azure":
+            deployment = model
+            completion_params = {
+                "model": deployment,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            
+            # Add response format if specified
+            if response_format:
+                completion_params["response_format"] = response_format
+                
+            response = client.chat.completions.create(**completion_params)
+            return response.choices[0].message.content
+            
+        elif provider == "anthropic":
+            message = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            return message.content[0].text
+            
+        elif provider == "google":
+            generation_config = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+            }
+            
+            model = client.GenerativeModel(model_name=model, generation_config=generation_config)
+            response = model.generate_content(prompt)
+            return response.text
+            
+        else:
+            raise LLMException(f"Unsupported provider: {provider}")
+            
+    except Exception as e:
+        logger.error(f"Error generating completion: {str(e)}")
+        raise LLMException(f"Error generating completion: {str(e)}")
 
 def main():
     parser = argparse.ArgumentParser(description='Query an LLM with a prompt')

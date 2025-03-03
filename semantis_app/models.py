@@ -1,6 +1,9 @@
 from django.db import models
 from pgvector.django import VectorField
 import uuid
+from django.contrib.auth.models import User
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 class Judgment(models.Model):
     """
@@ -20,6 +23,9 @@ class Judgment(models.Model):
     reportability_explanation = models.TextField(null=True, blank=True)  # Store the full explanation from GPT
     short_summary = models.TextField(null=True, blank=True)
     long_summary = models.TextField(null=True, blank=True)
+    practice_areas = models.TextField(null=True, blank=True)  # Store comma-separated practice areas
+    practice_areas_reasoning = models.TextField(null=True, blank=True)  # Store reasoning for practice area classification
+    case_name = models.CharField(max_length=1000, null=True, blank=True)  # Name of the case (e.g., "Smith v Jones")
     created_at = models.DateTimeField(auto_now_add=True)
     chunks = models.JSONField(null=True, blank=True)
     chunks_embedded = models.BooleanField(default=False)
@@ -65,16 +71,20 @@ class SearchHistory(models.Model):
     Model to store user search history
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_id = models.CharField(max_length=255, null=True, blank=True)  # Supabase user ID
+    supabase_user_id = models.CharField(max_length=255, null=True, blank=True)  # Supabase user ID
     query = models.TextField()
+    case = models.ForeignKey(Judgment, on_delete=models.CASCADE, null=True, blank=True, db_column='research_judgment_id')
+    ai_response = models.TextField(null=True, blank=True)
+    metadata = models.JSONField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Search by {self.user_id}: {self.query[:50]}..."
+        user = self.supabase_user_id or "Anonymous"
+        return f"Search by {user}: {self.query[:50]}..."
 
     class Meta:
         indexes = [
-            models.Index(fields=['user_id']),
+            models.Index(fields=['supabase_user_id']),
             models.Index(fields=['timestamp']),
         ]
         verbose_name_plural = "Search histories"
@@ -84,19 +94,19 @@ class SavedCase(models.Model):
     Model to store cases saved by users
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_id = models.CharField(max_length=255)  # Supabase user ID
+    supabase_user_id = models.CharField(max_length=255)  # Supabase user ID
     case = models.ForeignKey(Judgment, on_delete=models.CASCADE)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.user_id} saved {self.case.title}"
+        return f"{self.supabase_user_id} saved {self.case.title}"
 
     class Meta:
         indexes = [
-            models.Index(fields=['user_id']),
+            models.Index(fields=['supabase_user_id']),
             models.Index(fields=['timestamp']),
         ]
-        unique_together = ['user_id', 'case']  # Prevent duplicate saves
+        unique_together = ['supabase_user_id', 'case']  # Prevent duplicate saves
 
 class ScoringSection(models.Model):
     """
@@ -138,3 +148,23 @@ class ScoreValidation(models.Model):
             models.Index(fields=['validation_passed']),
             models.Index(fields=['validated_at']),
         ]
+
+class UserProfile(models.Model):
+    """
+    Extension of the Django User model to include Supabase user_id
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    supabase_user_id = models.CharField(max_length=255, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username}'s profile (Supabase ID: {self.supabase_user_id})"
+
+# Signal to create a UserProfile when a User is created
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    """Create a UserProfile when a User is created"""
+    if created:
+        # Note: supabase_user_id will need to be set manually after creation
+        UserProfile.objects.create(user=instance, supabase_user_id="pending")

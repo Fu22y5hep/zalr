@@ -175,7 +175,7 @@ def save_scoring_sections(case_id, explanation: str):
             explanation=section_explanation
         )
 
-def process_cases(target_court=None):
+def process_cases(target_court=None, batch_size=None):
     """Process cases to generate reportability scores."""
     # Build the base query
     base_query = Q(reportability_score=0) & ~Q(text_markdown__isnull=True)
@@ -184,12 +184,17 @@ def process_cases(target_court=None):
     if target_court:
         base_query &= Q(court=target_court)
     
-    # Get the queryset
-    cases = Judgment.objects.filter(base_query)
+    # Get the queryset and order it to ensure consistent results
+    cases = Judgment.objects.filter(base_query).order_by('id')
     
     print(f"Found {cases.count()} cases to process")
 
     processed_count = 0
+    
+    # Apply batch size if provided using efficient database-level limiting
+    if batch_size:
+        cases = cases[:batch_size]
+        print(f"Processing batch of {batch_size} cases")
     
     for case in cases:
         print(f"Processing case {case.id}")  # Debug: Print current case

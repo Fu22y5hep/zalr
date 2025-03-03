@@ -16,49 +16,50 @@ django.setup()
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 #client = OpenAI(api_key=os.getenv('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com")
 # Updated prompt template without bullet/number lists and without a system message
+# Updated prompt template without text_here placeholders
 PROMPT_TEMPLATE = """
 Generate a markdown-formatted summary of the provided judgment using the following structure. Use proper markdown syntax including headers (#, ##, ###), emphasis (**bold**), and proper spacing:
 
 # Case Note
-{text_here}
+[Provide the case name, citation, and date]
 
 ## Reportability
-{text_here}
+[Explain why this case is reportable and its significance]
 
 ## Cases Cited
-{text_here}
+[List the key cases referenced in the judgment]
 
 ## Legislation Cited
-{text_here}
+[List the relevant legislation referenced]
 
 ## Rules of Court Cited
-{text_here}
+[List any rules of court cited]
 
 # HEADNOTE
 
 ## Summary
-{text_here}
+[Provide a concise summary of the case]
 
 ## Key Issues
-{text_here}
+[List the key legal issues addressed]
 
 ## Held
-{text_here}
+[Summarize the court's holding/findings]
 
 # THE FACTS
-{text_here}
+[Provide a summary of the relevant facts]
 
 # THE ISSUES
-{text_here}
+[Explain the legal questions the court had to decide]
 
 # ANALYSIS
-{text_here}
+[Summarize the court's reasoning and analysis]
 
 # REMEDY
-{text_here}
+[Describe the remedy or order given by the court]
 
 # LEGAL PRINCIPLES
-{text_here}
+[Extract the key legal principles established or applied]
 
 Please ensure each section:
 1. Uses proper markdown headers (# for main sections, ## for subsections)
@@ -156,23 +157,28 @@ def validate_markdown_structure(text: str) -> bool:
     
     return True
 
-def summarize_judgments(target_court=None):
+def summarize_judgments(target_court=None, batch_size=None):
     """
     Generate summaries for high-scoring judgments.
     If target_court is provided, only process judgments from that court.
+    If batch_size is provided, only process that many judgments.
     """
     try:
         # Get all judgments with reportability score >= 75 and no summary
         judgments = Judgment.objects.filter(
             reportability_score__gte=75,
             long_summary__isnull=True
-        ).exclude(text_markdown__isnull=True)
+        ).exclude(text_markdown__isnull=True).order_by('id')
 
         # Apply court filter if provided
         if target_court:
             judgments = judgments.filter(court=target_court)
+            
+        # Apply batch size if provided using efficient database-level limiting
+        if batch_size:
+            judgments = judgments[:batch_size]
 
-        total_judgments = judgments.count()
+        total_judgments = len(list(judgments))
         logger.info(f"Found {total_judgments} judgments to summarize")
 
         successful = 0
