@@ -24,8 +24,6 @@ class Judgment(models.Model):
     short_summary = models.TextField(null=True, blank=True)
     long_summary = models.TextField(null=True, blank=True)
     practice_areas = models.TextField(null=True, blank=True)  # Store comma-separated practice areas
-    practice_areas_reasoning = models.TextField(null=True, blank=True)  # Store reasoning for practice area classification
-    case_name = models.CharField(max_length=1000, null=True, blank=True)  # Name of the case (e.g., "Smith v Jones")
     created_at = models.DateTimeField(auto_now_add=True)
     chunks = models.JSONField(null=True, blank=True)
     chunks_embedded = models.BooleanField(default=False)
