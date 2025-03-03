@@ -172,6 +172,12 @@ def classify_judgments(batch_size: int = 20, target_court: str = None, judgment_
         if target_court:
             base_query &= Q(court=target_court)
             
+            # Special handling for ZANWHC court
+            if target_court == 'ZANWHC':
+                logger.info("Special handling for North West High Court (ZANWHC)")
+                # Force retry for any ZANWHC judgments that couldn't be classified
+                base_query |= Q(court=target_court)
+            
         if judgment_id:
             # Process only the specific judgment
             try:
@@ -184,6 +190,17 @@ def classify_judgments(batch_size: int = 20, target_court: str = None, judgment_
         
         # Get judgments to process
         judgments = Judgment.objects.filter(base_query)[:batch_size]
+        
+        # If no judgments found, try to find by just court (in case of partial metadata)
+        if judgments.count() == 0 and target_court:
+            logger.warning(f"No unclassified judgments found for {target_court}. Checking if any exist at all.")
+            any_judgments = Judgment.objects.filter(court=target_court).count()
+            if any_judgments > 0:
+                logger.info(f"Found {any_judgments} judgments for {target_court}, but all have practice areas already.")
+                # Force reclassify some anyway if it's ZANWHC (since we had issues with it)
+                if target_court == 'ZANWHC':
+                    logger.info("Forcing reclassification of some ZANWHC judgments.")
+                    judgments = Judgment.objects.filter(court=target_court)[:batch_size]
         
         classified_count = 0
         

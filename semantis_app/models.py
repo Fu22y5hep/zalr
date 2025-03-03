@@ -168,3 +168,76 @@ def create_user_profile(sender, instance, created, **kwargs):
     if created:
         # Note: supabase_user_id will need to be set manually after creation
         UserProfile.objects.create(user=instance, supabase_user_id="pending")
+
+# Blog Models
+
+class BlogCategory(models.Model):
+    """
+    Model to store blog categories
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=100, unique=True)
+    description = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+    
+    class Meta:
+        verbose_name_plural = "Blog categories"
+        ordering = ['name']
+
+
+class BlogPost(models.Model):
+    """
+    Model to store blog posts with DALL-E generated images
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True)
+    content = models.TextField()
+    summary = models.TextField(null=True, blank=True)
+    image_url = models.URLField(max_length=500, null=True, blank=True)
+    image_prompt = models.TextField(null=True, blank=True)  # Store the prompt used to generate the image
+    category = models.ForeignKey(BlogCategory, on_delete=models.SET_NULL, null=True, related_name='posts')
+    author = models.CharField(max_length=100, default="Admin")  # Simple author field, can be expanded
+    is_published = models.BooleanField(default=False)
+    published_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.title
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['slug']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['is_published']),
+        ]
+
+
+class BlogComment(models.Model):
+    """
+    Model to store comments on blog posts
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    post = models.ForeignKey(BlogPost, on_delete=models.CASCADE, related_name='comments')
+    supabase_user_id = models.CharField(max_length=255)  # Supabase user ID
+    content = models.TextField()
+    is_approved = models.BooleanField(default=True)  # Auto-approve comments initially
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Comment by {self.supabase_user_id[:8]}... on {self.post.title}"
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['supabase_user_id']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['is_approved']),
+        ]
