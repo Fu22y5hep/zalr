@@ -20,7 +20,7 @@ client = OpenAI(api_key=api_key)
 def get_unprocessed_cases(target_court=None):
     """Get cases that need reportability scores."""
     query = Judgment.objects.filter(
-        reportability_score=0,
+        reportability_score__isnull=True,
         text_markdown__isnull=False
     )
     
@@ -175,26 +175,39 @@ def save_scoring_sections(case_id, explanation: str):
             explanation=section_explanation
         )
 
-def process_cases(target_court=None, batch_size=None):
+def process_cases(target_court=None, batch_size=None, judgment_ids=None, force=False):
     """Process cases to generate reportability scores."""
-    # Build the base query
-    base_query = Q(reportability_score=0) & ~Q(text_markdown__isnull=True)
-    
-    # Apply court filter if provided
-    if target_court:
-        base_query &= Q(court=target_court)
-    
-    # Get the queryset and order it to ensure consistent results
-    cases = Judgment.objects.filter(base_query).order_by('id')
-    
-    print(f"Found {cases.count()} cases to process")
+    # If specific judgment IDs are provided, process those
+    if judgment_ids:
+        cases = Judgment.objects.filter(id__in=judgment_ids)
+        # If not forcing, only process those without reportability scores
+        if not force:
+            cases = cases.filter(reportability_score__isnull=True)
+        print(f"Processing {cases.count()} specific judgments")
+    else:
+        # Build the base query
+        if force:
+            # Process all judgments if force is True
+            base_query = ~Q(text_markdown__isnull=True)
+        else:
+            # Otherwise, only process judgments without reportability scores
+            base_query = Q(reportability_score__isnull=True) & ~Q(text_markdown__isnull=True)
+        
+        # Apply court filter if provided
+        if target_court:
+            base_query &= Q(court=target_court)
+        
+        # Get the queryset and order it to ensure consistent results
+        cases = Judgment.objects.filter(base_query).order_by('id')
+        
+        print(f"Found {cases.count()} cases to process")
 
-    processed_count = 0
+        # Apply batch size if provided using efficient database-level limiting
+        if batch_size:
+            cases = cases[:batch_size]
+            print(f"Processing batch of {batch_size} cases")
     
-    # Apply batch size if provided using efficient database-level limiting
-    if batch_size:
-        cases = cases[:batch_size]
-        print(f"Processing batch of {batch_size} cases")
+    processed_judgments = []
     
     for case in cases:
         print(f"Processing case {case.id}")  # Debug: Print current case
@@ -203,12 +216,12 @@ def process_cases(target_court=None, batch_size=None):
             if score is not None:
                 save_reportability_score(case.id, score, explanation)
                 save_scoring_sections(case.id, explanation)
-                processed_count += 1
+                processed_judgments.append(str(case.id))
                 print(f"Processed case {case.id} with score {score}")
         else:
             print(f"Skipping case {case.id} - no text available")
     
-    return processed_count
+    return processed_judgments
 
 if __name__ == "__main__":
     process_cases()

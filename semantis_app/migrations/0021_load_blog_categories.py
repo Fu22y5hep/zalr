@@ -16,11 +16,13 @@ def load_blog_categories(apps, schema_editor):
     
     # Create categories
     for category_data in data['categories']:
-        BlogCategory.objects.create(
-            name=category_data['name'],
-            slug=category_data['slug'],
-            description=category_data['description']
-        )
+        # Check if the category already exists
+        if not BlogCategory.objects.filter(name=category_data['name']).exists():
+            BlogCategory.objects.create(
+                name=category_data['name'],
+                slug=category_data['slug'],
+                description=category_data['description']
+            )
 
 def reverse_load_blog_categories(apps, schema_editor):
     BlogCategory = apps.get_model('semantis_app', 'BlogCategory')
@@ -28,7 +30,7 @@ def reverse_load_blog_categories(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('semantis_app', '0020_blogcomment'),
+        ('semantis_app', '0020_remove_judgment_case_name_and_more'),
     ]
 
     operations = [

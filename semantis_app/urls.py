@@ -10,4 +10,6 @@ router.register(r'blog/comments', views.BlogCommentViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    # Add the citation search endpoint
+    path('judgments/citation-search/', views.search_by_citation, name='search-by-citation'),
 ] 

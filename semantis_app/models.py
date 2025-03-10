@@ -19,7 +19,7 @@ class Judgment(models.Model):
     judges = models.TextField(null=True, blank=True)
     text_markdown = models.TextField()
     vector_embedding = VectorField(dimensions=1024, null=True, blank=True)  # Using 1024 dimensions for voyage-law-2
-    reportability_score = models.IntegerField(default=0)
+    reportability_score = models.IntegerField(null=True, blank=True)
     reportability_explanation = models.TextField(null=True, blank=True)  # Store the full explanation from GPT
     short_summary = models.TextField(null=True, blank=True)
     long_summary = models.TextField(null=True, blank=True)
@@ -43,25 +43,27 @@ class Judgment(models.Model):
 
 class Statute(models.Model):
     """
-    Model to store statutes and their vector embeddings
+    Model to store legal statutes with their metadata and vector embeddings
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=255)
-    act_number = models.CharField(max_length=50, null=True, blank=True)
+    title = models.CharField(max_length=1000)
+    act_number = models.CharField(max_length=25, null=True, blank=True)
     year = models.IntegerField(null=True, blank=True)
     text_markdown = models.TextField()
-    vector_embedding = VectorField(dimensions=1024, null=True, blank=True)
+    vector_embedding = VectorField(dimensions=1024, null=True, blank=True)  # Using 1024 dimensions for voyage-law-2
     source_url = models.URLField(max_length=200, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    chunks = models.JSONField(null=True, blank=True)
+    chunks_embedded = models.BooleanField(default=False)  # Track if chunks have been embedded
 
     def __str__(self):
-        return f"{self.title} (Act {self.act_number} of {self.year})"
+        return f"{self.title} (Act No. {self.act_number} of {self.year})"
 
     class Meta:
         indexes = [
             models.Index(fields=['title']),
-            models.Index(fields=['year']),
             models.Index(fields=['act_number']),
+            models.Index(fields=['year']),
         ]
 
 class SearchHistory(models.Model):
@@ -195,6 +197,7 @@ class BlogPost(models.Model):
     title = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     content = models.TextField()
+    content_format = models.CharField(max_length=10, default='html', choices=[('html', 'HTML'), ('xml', 'XML')], help_text='Format of the content: html or xml')
     summary = models.TextField(null=True, blank=True)
     image_url = models.URLField(max_length=500, null=True, blank=True)
     image_prompt = models.TextField(null=True, blank=True)  # Store the prompt used to generate the image

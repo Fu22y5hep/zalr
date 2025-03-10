@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 import voyageai
 from dotenv import load_dotenv
 from django.db import transaction
-from semantis_app.models import Judgment
+from semantis_app.models import Judgment, Statute
 import time
 import logging
 
@@ -108,4 +108,98 @@ def generate_embeddings(batch_size: int = None):
     """
     generator = EmbeddingGenerator()
     processed = generator.process_pending_judgments(batch_size)
-    logger.info(f"Finished processing {processed} judgments") 
+    logger.info(f"Finished processing {processed} judgments")
+
+def generate_embedding(text):
+    """
+    Generate a single embedding for a text using voyage-law-2 model.
+    
+    Args:
+        text (str): The text to generate an embedding for
+        
+    Returns:
+        np.ndarray: The generated embedding vector or None if failed
+    """
+    try:
+        client = voyageai.Client()
+        # For long texts, we may need to truncate
+        truncated_text = text[:10000]  # Adjust as needed
+        
+        # Use voyage-law-2 model for embeddings
+        response = client.embed(
+            texts=[truncated_text],
+            model="voyage-law-2"
+        )
+        
+        # Return the first (and only) embedding
+        if response and hasattr(response, 'embeddings') and len(response.embeddings) > 0:
+            return response.embeddings[0]
+        else:
+            logger.error("Failed to generate embedding: empty response")
+            return None
+    except Exception as e:
+        logger.error(f"Error generating embedding: {e}")
+        return None
+
+def generate_statute_embeddings(batch_size=10):
+    """
+    Generate embeddings for statutes that have chunks but no embeddings.
+    
+    Args:
+        batch_size (int): Number of statutes to process in each batch
+        
+    Returns:
+        int: Number of statutes processed
+    """
+    # Get statutes with chunks but no embeddings
+    client = voyageai.Client()
+    model = "voyage-law-2"
+    
+    # Get statutes that need embeddings
+    statutes = Statute.objects.filter(
+        chunks_embedded=False
+    )[:batch_size]
+    
+    processed_count = 0
+    
+    for statute in statutes:
+        try:
+            logger.info(f"Generating embedding for statute: {statute.title}")
+            
+            # Get the text to embed
+            text = statute.text_markdown
+            if not text:
+                logger.warning(f"No text found for statute {statute.id}")
+                continue
+                
+            # Generate new embedding directly
+            try:
+                # Truncate text if too long
+                truncated_text = text[:10000]
+                
+                # Generate embedding
+                response = client.embed(
+                    texts=[truncated_text],
+                    model=model
+                )
+                
+                if not response or not hasattr(response, 'embeddings') or len(response.embeddings) == 0:
+                    logger.error(f"Empty response for statute {statute.id}")
+                    continue
+                    
+                # Save embedding
+                with transaction.atomic():
+                    statute.vector_embedding = response.embeddings[0]
+                    statute.chunks_embedded = True
+                    statute.save()
+                    
+                processed_count += 1
+                logger.info(f"Successfully generated embedding for statute: {statute.title}")
+                
+            except Exception as e:
+                logger.error(f"API error for statute {statute.id}: {e}")
+            
+        except Exception as e:
+            logger.error(f"Error processing statute {statute.id}: {e}")
+    
+    return processed_count 

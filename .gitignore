@@ -60,9 +60,90 @@ coverage.xml
 process_flow_*.log
 process_flow_report_*.txt
 process_flow.log
+process_all_courts_checkpoint_*.json
+process_all_courts_year.sh
+process_court_year.sh
+process_year.sh
 
 # Test Scripts
 test_*.py
 *_test.py
 test.py
-tests.py 
+tests.py
+
+# Debug and Script Files
+*.debug
+debug_*.log
+debug_output/
+debug_reports/
+scripts/output/
+*_debug_results.txt
+*.debug.json
+debug_saflii_*.html
+check_*.py
+prevent_sleep.py
+run_*.py
+run_*_no_sleep.sh
+run_*_with_no_sleep.sh
+sample_*.py
+setup_*.py
+switch_db.py
+
+# Log Files
+logs/
+log/
+# Log patterns (*.log already included in Django section)
+stage*_*.log
+auto_process_flow_*.log
+run_all_stages_*.log
+stage*_*_*.log
+
+# Index Files
+*.idx
+*.index
+search_index/
+index_files/
+vector_index/
+*.vec.idx
+# History index files with timestamps
+*index_[0-9]*.js
+@index_*.js
+.history/
+*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].js
+
+# Temporary Script Execution Files
+script_execution_*.txt
+tmp_script_*.py
+_temp_script_*.py
+run_temp_*.sh
+
+# Node.js/npm
+node_modules/
+package-lock.json
+package.json
+
+# Documentation
+*.md
+!README.md
+
+# Project-specific files
+court_config.yaml
+stages/
+statutes_*.html
+supabase/
+
+# Environment configurations
+*.env.*
+
+# Migration files added during development
+semantis_app/migrations/00[2-9]*.py
+
+# Web assets for development
+law_reports_*.css
+law_reports_*.js
+
+# Stage management commands
+semantis_app/management/commands/stage*.py
+semantis_app/management/commands/process_all_courts.py
+semantis_app/management/commands/scrape_*.py
+semantis_app/management/commands/update_*.py 

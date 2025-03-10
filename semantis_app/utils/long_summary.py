@@ -157,32 +157,47 @@ def validate_markdown_structure(text: str) -> bool:
     
     return True
 
-def summarize_judgments(target_court=None, batch_size=None):
+def summarize_judgments(target_court=None, batch_size=None, judgment_ids=None, force=False, min_reportability=75):
     """
     Generate summaries for high-scoring judgments.
     If target_court is provided, only process judgments from that court.
     If batch_size is provided, only process that many judgments.
+    If judgment_ids is provided, process only those specific judgments.
+    If force is True, regenerate summaries for judgments that already have them.
     """
     try:
-        # Get all judgments with reportability score >= 75 and no summary
-        judgments = Judgment.objects.filter(
-            reportability_score__gte=75,
-            long_summary__isnull=True
-        ).exclude(text_markdown__isnull=True).order_by('id')
-
-        # Apply court filter if provided
-        if target_court:
-            judgments = judgments.filter(court=target_court)
+        # If specific judgment IDs are provided, process those
+        if judgment_ids:
+            judgments = Judgment.objects.filter(id__in=judgment_ids)
+            # If not forcing, only process those without long summaries
+            if not force:
+                judgments = judgments.filter(long_summary__isnull=True)
+            # Only process judgments with sufficiently high reportability
+            judgments = judgments.filter(reportability_score__gte=min_reportability)
+            logger.info(f"Processing {len(judgment_ids)} specific judgments with reportability >= {min_reportability}")
+        else:
+            # Get all judgments with reportability score >= min_reportability and no summary
+            judgments = Judgment.objects.filter(
+                reportability_score__gte=min_reportability
+            ).exclude(text_markdown__isnull=True).order_by('id')
             
-        # Apply batch size if provided using efficient database-level limiting
-        if batch_size:
-            judgments = judgments[:batch_size]
+            # If not forcing, only process those without long summaries
+            if not force:
+                judgments = judgments.filter(long_summary__isnull=True)
+
+            # Apply court filter if provided
+            if target_court:
+                judgments = judgments.filter(court=target_court)
+                
+            # Apply batch size if provided using efficient database-level limiting
+            if batch_size:
+                judgments = judgments[:batch_size]
 
         total_judgments = len(list(judgments))
         logger.info(f"Found {total_judgments} judgments to summarize")
 
-        successful = 0
-        failed = 0
+        successful = []
+        failed = []
 
         # Process each judgment
         for i, judgment in enumerate(judgments, 1):
@@ -209,14 +224,14 @@ def summarize_judgments(target_court=None, batch_size=None):
                     
                     if not validate_markdown_structure(summary):
                         logger.error(f"Generated summary for {citation} is missing required sections")
-                        failed += 1
+                        failed.append(citation)
                         continue
 
                     # Update the judgment with the summary
                     judgment.long_summary = summary
                     judgment.save()
 
-                    successful += 1
+                    successful.append(citation)
                     logger.info(f"Successfully summarized judgment: {citation}")
                     
                     # Add a small delay between API calls
@@ -224,21 +239,23 @@ def summarize_judgments(target_court=None, batch_size=None):
                         time.sleep(2)
 
                 except Exception as e:
-                    failed += 1
+                    failed.append(citation)
                     logger.error(f"Failed to generate summary for {citation}: {str(e)}")
                     continue
 
             except Exception as e:
-                failed += 1
+                failed.append(citation)
                 logger.error(f"Error processing judgment {citation}: {str(e)}")
                 continue
 
         logger.info(f"Finished processing all judgments. Successful: {successful}, Failed: {failed}")
+        logger.info(f"Summarization completed. Successful: {len(successful)}, Failed: {len(failed)}")
+        
         return successful
 
     except Exception as e:
         logger.error(f"Fatal error in summarize_judgments: {str(e)}")
-        return 0
+        return []
 
 if __name__ == "__main__":
     summarize_judgments()

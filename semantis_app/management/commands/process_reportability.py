@@ -55,7 +55,13 @@ class Command(BaseCommand):
 
     def get_judgments_to_process(self, options) -> list[Judgment]:
         """Get judgments based on filtering criteria."""
-        query = Q(reportability_score=0)  # Unscored judgments
+        # Build the base query - only get judgments with text or citations
+        base_query = ~Q(text_markdown__isnull=True) | ~Q(full_citation__isnull=True)
+        
+        # Apply other filters (no reportability score, court filter)
+        if not options['force']:
+            query = Q(reportability_score__isnull=True)  # Unscored judgments
+            base_query &= query
 
         # Apply filters
         court = options.get('court')
@@ -64,16 +70,16 @@ class Command(BaseCommand):
         end_number = options.get('end_number')
 
         if court:
-            query &= Q(court=court)
+            base_query &= Q(court=court)
         if year:
-            query &= Q(neutral_citation_year=year)
+            base_query &= Q(neutral_citation_year=year)
         if start_number is not None:
-            query &= Q(neutral_citation_number__gte=start_number)
+            base_query &= Q(neutral_citation_number__gte=start_number)
         if end_number is not None:
-            query &= Q(neutral_citation_number__lte=end_number)
+            base_query &= Q(neutral_citation_number__lte=end_number)
 
         # Order by citation number for consistent processing
-        judgments = Judgment.objects.filter(query).order_by(
+        judgments = Judgment.objects.filter(base_query).order_by(
             'neutral_citation_year', 'neutral_citation_number'
         )
 

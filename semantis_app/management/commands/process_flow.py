@@ -124,7 +124,7 @@ class Command(BaseCommand):
                 return processed == total_count, processed
             
             elif stage == Stage.REPORTABILITY:
-                processed = judgments.exclude(reportability_score=0).count()
+                processed = judgments.exclude(reportability_score__isnull=True).count()
                 return processed == total_count, processed
             
             elif stage == Stage.LONG_SUMMARY:
@@ -162,7 +162,7 @@ class Command(BaseCommand):
         elif stage == Stage.SHORT_SUMMARY:
             base_query &= Q(short_summary__isnull=True)
         elif stage == Stage.REPORTABILITY:
-            base_query &= Q(reportability_score=0)
+            base_query &= Q(reportability_score__isnull=True)
         elif stage == Stage.LONG_SUMMARY:
             base_query &= Q(reportability_score__gte=75, long_summary__isnull=True)
         elif stage == Stage.CLASSIFY_PRACTICE_AREAS and PRACTICE_AREAS_AVAILABLE:
@@ -206,7 +206,7 @@ class Command(BaseCommand):
                         failed_ids.append(judgment.id)
                 
                 elif stage == Stage.REPORTABILITY:
-                    if judgment.reportability_score == 0:
+                    if judgment.reportability_score is None:
                         failed_ids.append(judgment.id)
                 
                 elif stage == Stage.LONG_SUMMARY:
@@ -280,7 +280,7 @@ class Command(BaseCommand):
             f"Judgments with Embeddings: {Judgment.objects.filter(base_query).filter(chunks_embedded=True).count()}",
             f"Judgments with Full Metadata: {Judgment.objects.filter(base_query).exclude(Q(full_citation__isnull=True) | Q(case_number__isnull=True) | Q(judgment_date__isnull=True) | Q(judges__isnull=True)).count()}",
             f"Judgments with Short Summaries: {Judgment.objects.filter(base_query).exclude(short_summary__isnull=True).count()}",
-            f"Judgments with Reportability Scores: {Judgment.objects.filter(base_query).exclude(reportability_score=0).count()}",
+            f"Judgments with Reportability Scores: {Judgment.objects.filter(base_query).exclude(reportability_score__isnull=True).count()}",
             f"Judgments with Long Summaries: {Judgment.objects.filter(base_query).exclude(long_summary__isnull=True).count()}",
             f"High-Scoring Judgments (>=75): {Judgment.objects.filter(base_query).filter(reportability_score__gte=75).count()}",
         ]

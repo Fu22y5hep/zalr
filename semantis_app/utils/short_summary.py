@@ -91,14 +91,19 @@ def process_case(judgment: Judgment) -> bool:
         logger.error(f"Error processing judgment {citation}: {str(e)}")
         return False
 
-def process_all_cases(batch_size: int = 20, delay: float = 2.0, force: bool = False, target_court: Optional[str] = None) -> int:
+def process_all_cases(batch_size: int = 20, delay: float = 2.0, force: bool = False, target_court: Optional[str] = None, judgment_ids: Optional[list] = None) -> int:
     try:
         # Get total count of judgments that need processing
-        query = Judgment.objects.filter(text_markdown__isnull=False)
-        if target_court:
-            query = query.filter(court=target_court)
-        if not force:
-            query = query.filter(short_summary__isnull=True)
+        if judgment_ids:
+            # If specific judgment IDs are provided, use those
+            query = Judgment.objects.filter(id__in=judgment_ids)
+        else:
+            # Otherwise, get judgments by filter criteria
+            query = Judgment.objects.filter(text_markdown__isnull=False)
+            if target_court:
+                query = query.filter(court=target_court)
+            if not force:
+                query = query.filter(short_summary__isnull=True)
             
         total_judgments = query.count()
         
@@ -111,24 +116,27 @@ def process_all_cases(batch_size: int = 20, delay: float = 2.0, force: bool = Fa
         logger.info(f"Force mode: {'enabled' if force else 'disabled'}")
         if target_court:
             logger.info(f"Target court: {target_court}")
+        if judgment_ids:
+            logger.info(f"Processing specific judgment IDs: {len(judgment_ids)} judgments")
         
         # Get judgments without summaries
         judgments = query.order_by('judgment_date')[:batch_size]  # Process in batches
         
         total = len(judgments)
-        successful = failed = 0
+        successful = []
+        failed = []
         
         for i, judgment in enumerate(judgments, 1):
             logger.info(f"Processing judgment {i} of {total} (Total remaining: {total_judgments - i})")
             if process_case(judgment):
-                successful += 1
+                successful.append(str(judgment.id))
             else:
-                failed += 1
+                failed.append(str(judgment.id))
             if i < total:
                 time.sleep(delay)  # Delay between judgments
                 
-        logger.info(f"Processing completed. Successful: {successful}, Failed: {failed}")
-        logger.info(f"Remaining judgments to process: {total_judgments - successful}")
+        logger.info(f"Processing completed. Successful: {len(successful)}, Failed: {len(failed)}")
+        logger.info(f"Remaining judgments to process: {total_judgments - len(successful)}")
         
         return successful
         

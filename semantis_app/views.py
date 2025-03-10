@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from rest_framework import viewsets, status, generics, permissions
 from rest_framework.response import Response
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from django.utils import timezone
 from django.utils.text import slugify
 from django.conf import settings
@@ -12,7 +12,7 @@ import json
 import uuid
 import os
 
-from .models import BlogPost, BlogCategory, BlogComment
+from .models import BlogPost, BlogCategory, BlogComment, Judgment
 from .serializers import (
     BlogPostListSerializer, 
     BlogPostDetailSerializer, 
@@ -25,6 +25,73 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 # Create your views here.
+
+@api_view(['GET'])
+def search_by_citation(request):
+    """
+    API endpoint to search judgments by citation number
+    """
+    citation_number = request.query_params.get('citation_number')
+    if not citation_number:
+        return Response(
+            {"detail": "Citation number is required"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        # Try to convert the citation number to an integer
+        citation_int = int(citation_number)
+        
+        # Get the court code and year if provided
+        court = request.query_params.get('court')
+        year = request.query_params.get('year')
+        
+        # Build the query
+        query = {'neutral_citation_number': citation_int}
+        
+        if court:
+            query['court'] = court
+            
+        if year:
+            try:
+                year_int = int(year)
+                query['neutral_citation_year'] = year_int
+            except ValueError:
+                # If year is not a valid integer, ignore it
+                pass
+                
+        # Try to find the judgment
+        judgment = Judgment.objects.filter(**query).first()
+        
+        if judgment:
+            # Return basic judgment information
+            result = {
+                'id': judgment.id,
+                'title': judgment.title,
+                'court': judgment.court,
+                'citation': f"[{judgment.neutral_citation_year}] {judgment.court} {judgment.neutral_citation_number}",
+                'judgment_date': judgment.judgment_date.isoformat() if judgment.judgment_date else None,
+                'judges': judgment.judges,
+                'case_number': judgment.case_number,
+                'short_summary': judgment.short_summary,
+            }
+            return Response(result)
+        else:
+            return Response(
+                {"detail": "No judgment found with the specified citation number"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    except ValueError:
+        return Response(
+            {"detail": "Citation number must be a valid integer"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        logger.error(f"Error searching for judgment by citation: {str(e)}")
+        return Response(
+            {"detail": f"An error occurred: {str(e)}"}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 class BlogCategoryViewSet(viewsets.ModelViewSet):
     """
