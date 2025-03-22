@@ -146,4 +146,21 @@ law_reports_*.js
 semantis_app/management/commands/stage*.py
 semantis_app/management/commands/process_all_courts.py
 semantis_app/management/commands/scrape_*.py
-semantis_app/management/commands/update_*.py 
+semantis_app/management/commands/update_*.py
+
+# React/Browser development error logs
+*-error.log
+browser-errors.txt
+react-errors.log
+webpack-internal-*.log
+browser-console-logs/
+frontend-debugging/
+
+# Webpack/bundler related
+.next/
+.nuxt/
+dist/
+build/
+out/
+webpack-stats.json
+webpack-bundle-analyzer-report.html 
