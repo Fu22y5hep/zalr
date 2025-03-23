@@ -58,6 +58,6 @@ class ReportData(BaseModel):
 writer_agent = Agent(
     name="ResearchAnalyst",
     instructions=PROMPT,
-    model="gpt-4o",  # Upgraded from o3-mini for better synthesis capabilities
+    model="gpt-4o-mini",  # Upgraded from o3-mini for better synthesis capabilities
     output_type=ReportData,
 ) 
