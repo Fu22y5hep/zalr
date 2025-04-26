@@ -66,15 +66,15 @@ def run_stage(stage_num, year, court=None, batch_size=None, min_reportability=No
     # Path to manage.py - in the root directory
     manage_py = "./manage.py"
     
-    # Stage command mapping
+    # Stage command mapping - include the semantis_app namespace
     stage_commands = {
-        1: "stage1_scrape_judgments",
-        2: "stage2_fix_metadata",
-        3: "stage3_chunk_judgments",
-        4: "stage4_generate_embeddings",
-        5: "stage5_generate_short_summaries",
-        6: "stage6_calculate_reportability",
-        7: "stage7_generate_long_summaries"
+        1: "semantis_app.stage1_scrape_judgments",
+        2: "semantis_app.stage2_fix_metadata",
+        3: "semantis_app.stage3_chunk_judgments",
+        4: "semantis_app.stage4_generate_embeddings",
+        5: "semantis_app.stage5_generate_short_summaries",
+        6: "semantis_app.stage6_calculate_reportability",
+        7: "semantis_app.stage7_generate_long_summaries"
     }
     
     command = f"python {manage_py} {stage_commands[stage_num]}"
