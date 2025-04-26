@@ -17,9 +17,7 @@ jobs:
           python-version: '3.10'
       
       - name: Install uv
-        run: |
-          curl -sSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | bash
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v5
       
       - name: Install dependencies with uv
         run: |
@@ -28,19 +26,16 @@ jobs:
       
       - name: List installed packages
         run: |
-          . .venv/bin/activate
-          python -m pip list
+          uv run pip list
       
       - name: Check Python environment
         run: |
-          . .venv/bin/activate
-          python --version
-          python -c "import sys; print(sys.executable)"
+          uv run python --version
+          uv run python -c "import sys; print(sys.executable)"
       
       - name: Check run_all_stages.py
         run: |
-          . .venv/bin/activate
-          python -c "import os; print(os.path.exists('run_all_stages.py')); print(open('run_all_stages.py', 'r').read()[:200] + '...')"
+          uv run python -c "import os; print(os.path.exists('run_all_stages.py')); print(open('run_all_stages.py', 'r').read()[:200] + '...')"
           
       - name: Verify logs directory
         run: |

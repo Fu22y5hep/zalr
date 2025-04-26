@@ -23,9 +23,7 @@ jobs:
           python-version: '3.10'
       
       - name: Install uv
-        run: |
-          curl -sSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | bash
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v5
       
       - name: Install dependencies with uv
         run: |
@@ -35,7 +33,7 @@ jobs:
       - name: Run all stages for current year
         run: |
           CURRENT_YEAR=$(date +%Y)
-          python run_all_stages.py --year $CURRENT_YEAR
+          uv run python run_all_stages.py --year $CURRENT_YEAR
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
