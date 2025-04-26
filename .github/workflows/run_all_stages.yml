@@ -50,7 +50,7 @@ jobs:
       
       - name: Upload logs as artifacts
         if: always()
-        uses: actions/upload-artifact@v2.2.4
+        uses: actions/upload-artifact@v2
         with:
           name: process-logs
           path: logs/
