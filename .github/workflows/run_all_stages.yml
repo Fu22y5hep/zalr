@@ -17,13 +17,33 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Debug - List repository contents
+      - name: Debug - List repository structure
         run: |
           echo "Current directory: $(pwd)"
-          echo "Repository contents:"
+          echo "Repository root contents:"
           ls -la
-          echo "Stages directory:"
-          ls -la stages/
+          echo "Checking stages directory:"
+          if [ -d "stages" ]; then
+            echo "Stages directory exists, listing contents:"
+            ls -la stages/
+            if [ -f "stages/zalr" ]; then
+              echo "stages/zalr exists, checking permissions:"
+              ls -la stages/zalr
+            else
+              echo "stages/zalr does not exist!"
+            fi
+            if [ -f "stages/zalr_cli.py" ]; then
+              echo "stages/zalr_cli.py exists"
+            else
+              echo "stages/zalr_cli.py does not exist!"
+            fi
+          else
+            echo "Stages directory does not exist!"
+            echo "Searching for zalr files:"
+            find . -name "zalr*" | sort
+          fi
+          echo "Checking for stage1_scrape_judgments.py:"
+          find . -name "stage1_scrape_judgments.py" | sort
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -48,24 +68,27 @@ jobs:
             echo "No setup.py found, skipping project installation"
           fi
       
-      - name: Run stages using zalr_cli.py
+      - name: Make zalr_cli.py and stage scripts executable
+        run: |
+          # Make sure zalr script is executable
+          if [ -f "stages/zalr" ]; then
+            chmod +x stages/zalr
+          fi
+          
+          # Also force add execution permissions to any stage scripts
+          find stages -name "*.py" -exec chmod +x {} \;
+      
+      - name: Run pipeline using helper script
         run: |
           CURRENT_YEAR=$(date +%Y)
           # Activate virtual environment
           . .venv/bin/activate
           
-          if [ -f "stages/zalr_cli.py" ]; then
-            echo "Using zalr_cli.py to run stages"
-            python stages/zalr_cli.py run-all --year $CURRENT_YEAR
-          elif [ -f "stages/zalr" ]; then
-            echo "Using zalr script to run stages"
-            ./stages/zalr run-all --year $CURRENT_YEAR
-          else
-            echo "ERROR: Neither zalr_cli.py nor zalr script found"
-            echo "Available files in stages directory:"
-            ls -la stages/
-            exit 1
-          fi
+          # Make the run_pipeline.py script executable
+          chmod +x run_pipeline.py
+          
+          # Run the pipeline script which will try all available methods
+          python run_pipeline.py $CURRENT_YEAR
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
