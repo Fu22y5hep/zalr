@@ -40,4 +40,17 @@ jobs:
       - name: Check run_all_stages.py
         run: |
           . .venv/bin/activate
-          python -c "import os; print(os.path.exists('run_all_stages.py')); print(open('run_all_stages.py', 'r').read()[:200] + '...')" 
+          python -c "import os; print(os.path.exists('run_all_stages.py')); print(open('run_all_stages.py', 'r').read()[:200] + '...')"
+          
+      - name: Verify logs directory
+        run: |
+          mkdir -p logs
+          echo "Test log entry" > logs/test.log
+          ls -la logs/
+          
+      - name: Test artifact upload
+        uses: actions/upload-artifact@v2.2.4
+        with:
+          name: test-logs
+          path: logs/
+          retention-days: 1 

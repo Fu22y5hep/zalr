@@ -42,9 +42,15 @@ jobs:
           SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
       
+      - name: Verify logs directory
+        if: always()
+        run: |
+          mkdir -p logs
+          ls -la logs/
+      
       - name: Upload logs as artifacts
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2.2.4
         with:
           name: process-logs
           path: logs/
