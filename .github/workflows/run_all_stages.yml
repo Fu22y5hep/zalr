@@ -17,6 +17,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Debug - List repository contents
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Repository contents:"
+          ls -la
+          echo "Checking run_all_stages.py exists:"
+          if [ -f "run_all_stages.py" ]; then echo "File exists"; else echo "File does not exist"; fi
+      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -33,7 +41,13 @@ jobs:
       - name: Run all stages for current year
         run: |
           CURRENT_YEAR=$(date +%Y)
-          uv run python run_all_stages.py --year $CURRENT_YEAR
+          if [ -f "run_all_stages.py" ]; then
+            echo "Using run_all_stages.py in root directory"
+            uv run python run_all_stages.py --year $CURRENT_YEAR
+          else
+            echo "ERROR: run_all_stages.py not found in expected location"
+            exit 1
+          fi
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -2,6 +2,9 @@ name: Test Environment Setup
 
 on:
   workflow_dispatch:  # Manual triggering only
+  push:  # Temporarily add push trigger for testing
+    branches:
+      - main
   
 jobs:
   test-setup:
@@ -10,6 +13,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Debug - List repository contents
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Repository contents:"
+          ls -la
+          echo "Checking run_all_stages.py exists:"
+          if [ -f "run_all_stages.py" ]; then echo "File exists"; else echo "File does not exist"; fi
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -35,7 +46,9 @@ jobs:
       
       - name: Check run_all_stages.py
         run: |
-          uv run python -c "import os; print(os.path.exists('run_all_stages.py')); print(open('run_all_stages.py', 'r').read()[:200] + '...')"
+          echo "Current directory: $(pwd)"
+          echo "Checking file: $(ls -la run_all_stages.py 2>/dev/null || echo 'File not found')"
+          uv run python -c "import os; print('File exists:', os.path.exists('run_all_stages.py')); print('Files in directory:', os.listdir('.')[:10])"
           
       - name: Verify logs directory
         run: |
