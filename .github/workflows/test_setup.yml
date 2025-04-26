@@ -1,0 +1,43 @@
+name: Test Environment Setup
+
+on:
+  workflow_dispatch:  # Manual triggering only
+  
+jobs:
+  test-setup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install uv
+        run: |
+          curl -sSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | bash
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      
+      - name: Install dependencies with uv
+        run: |
+          uv venv
+          uv pip install -r requirements.txt
+      
+      - name: List installed packages
+        run: |
+          . .venv/bin/activate
+          python -m pip list
+      
+      - name: Check Python environment
+        run: |
+          . .venv/bin/activate
+          python --version
+          python -c "import sys; print(sys.executable)"
+      
+      - name: Check run_all_stages.py
+        run: |
+          . .venv/bin/activate
+          python -c "import os; print(os.path.exists('run_all_stages.py')); print(open('run_all_stages.py', 'r').read()[:200] + '...')" 
