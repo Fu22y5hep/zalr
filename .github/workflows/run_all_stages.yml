@@ -22,8 +22,8 @@ jobs:
           echo "Current directory: $(pwd)"
           echo "Repository contents:"
           ls -la
-          echo "Command files:"
-          ls -la semantis_app/management/commands/
+          echo "Stages directory:"
+          ls -la stages/
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -48,24 +48,22 @@ jobs:
             echo "No setup.py found, skipping project installation"
           fi
       
-      - name: List available Django commands
-        run: |
-          # Activate the virtual environment
-          . .venv/bin/activate
-          echo "Available Django commands:"
-          python manage.py help
-          echo "Checking for stage1_scrape_judgments command:"
-          python manage.py help | grep stage1_scrape_judgments || true
-      
-      - name: Run all stages for current year
+      - name: Run stages using zalr_cli.py
         run: |
           CURRENT_YEAR=$(date +%Y)
-          if [ -f "run_all_stages.py" ]; then
-            echo "Using run_all_stages.py in root directory"
-            . .venv/bin/activate  # Activate venv explicitly
-            python run_all_stages.py --year $CURRENT_YEAR
+          # Activate virtual environment
+          . .venv/bin/activate
+          
+          if [ -f "stages/zalr_cli.py" ]; then
+            echo "Using zalr_cli.py to run stages"
+            python stages/zalr_cli.py run-all --year $CURRENT_YEAR
+          elif [ -f "stages/zalr" ]; then
+            echo "Using zalr script to run stages"
+            ./stages/zalr run-all --year $CURRENT_YEAR
           else
-            echo "ERROR: run_all_stages.py not found in expected location"
+            echo "ERROR: Neither zalr_cli.py nor zalr script found"
+            echo "Available files in stages directory:"
+            ls -la stages/
             exit 1
           fi
         env:

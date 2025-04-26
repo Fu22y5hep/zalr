@@ -1,0 +1,15 @@
+#!/bin/bash
+# ZALR CLI Wrapper
+# This script is a simple wrapper around zalr_cli.py
+
+# Find the actual script location (support symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+
+# Run the Python script with all arguments passed through
+python "$DIR/zalr_cli.py" "$@" 
