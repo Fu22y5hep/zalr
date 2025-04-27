@@ -17,19 +17,40 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Python
+      - name: Setup Python environment
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
-      
-      - name: Install dependencies with uv
         run: |
-          uv venv
+          pip install uv
+      
+      - name: Install dependencies
+        run: |
           uv pip install -r requirements.txt
-          uv pip install -e .
+      
+      - name: Create .env file from secrets
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_PUBLIC_KEY=${{ secrets.SUPABASE_PUBLIC_KEY }}" >> .env
+          echo "DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}" >> .env
+          echo "DJANGO_SETTINGS_MODULE=semantis.settings" >> .env
+          echo "VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}" >> .env
+      
+      - name: Run migrations
+        run: |
+          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          uv run python manage.py migrate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       
       - name: Create settings module
         run: |
@@ -178,16 +199,6 @@ jobs:
       
       - name: Setup environment
         run: |
-          # Create .env file with secrets
-          cat > .env << EOF
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_PUBLIC_KEY=${{ secrets.SUPABASE_PUBLIC_KEY }}
-          DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
-          DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
-          VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}
-          EOF
-          
           # Export environment variables
           export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
           export PYTHONPATH=$PYTHONPATH:$(pwd)
