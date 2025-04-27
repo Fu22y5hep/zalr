@@ -45,16 +45,34 @@ class Command(BaseCommand):
     def load_court_codes(self):
         """Load all valid court codes from configuration"""
         court_codes = []
-        try:
-            with open('court_config.yaml', 'r') as file:
-                court_config = yaml.safe_load(file)
-                for court in court_config.get('courts', []):
-                    court_codes.append(court.get('code'))
-            return court_codes
-        except Exception as e:
-            self.stdout.write(self.style.WARNING(f"Warning: Could not load court codes: {str(e)}"))
-            # Fallback to a default list of common court codes
-            return ['ZACC', 'ZASCA', 'ZAGPPHC', 'ZAWCHC', 'ZAKZDHC']
+        
+        # Check multiple locations for the court_config.yaml file
+        possible_config_locations = [
+            'court_config.yaml',  # Current directory
+            os.path.join(os.path.dirname(__file__), 'court_config.yaml'),  # Script directory
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'court_config.yaml'),  # Parent directory
+            '/court_config.yaml',  # Root directory
+        ]
+        
+        for config_path in possible_config_locations:
+            try:
+                if os.path.exists(config_path):
+                    self.stdout.write(f"Found court_config.yaml at {config_path}")
+                    with open(config_path, 'r') as file:
+                        court_config = yaml.safe_load(file)
+                        for court in court_config.get('courts', []):
+                            court_codes.append(court.get('code'))
+                    return court_codes
+            except Exception as e:
+                self.stdout.write(f"Error loading from {config_path}: {str(e)}")
+                continue
+        
+        # If we get here, we couldn't find the file in any location
+        self.stdout.write(self.style.WARNING(f"Warning: Could not load court codes: No court_config.yaml found"))
+        # Fallback to a default list of common court codes
+        fallback_codes = ['ZACC', 'ZASCA', 'ZAGPPHC', 'ZAWCHC', 'ZAKZDHC']
+        self.stdout.write(f"Using fallback court codes: {', '.join(fallback_codes)}")
+        return fallback_codes
 
     def validate_court_code(self, court):
         """Validate if the provided court code is valid"""
