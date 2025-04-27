@@ -216,6 +216,10 @@ jobs:
           
           echo "Running pipeline for $CURRENT_YEAR using stage scripts directly"
           
+          # First run the Django setup script to initialize Django
+          echo "Initializing Django before running stage scripts..."
+          uv run python django_setup.py
+          
           # Run each stage script in sequence
           uv run python stages/stage1_scrape_judgments.py --year $CURRENT_YEAR
           uv run python stages/stage2_fix_metadata.py --year $CURRENT_YEAR
@@ -249,6 +253,10 @@ jobs:
           CURRENT_YEAR=$(date +%Y)
           
           echo "Fallback: Running any stages that might have failed individually with detailed error reporting"
+          
+          # First ensure Django is initialized
+          echo "Initializing Django before running stage scripts..."
+          uv run python django_setup.py
           
           # Try running individual stages with --debug flag for more info
           for stage_script in stages/stage{1..8}_*.py; do
