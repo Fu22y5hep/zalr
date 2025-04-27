@@ -14,6 +14,7 @@ import sys
 import argparse
 import importlib.util
 import time
+import shutil
 from datetime import datetime
 
 # Parse command line arguments
@@ -23,6 +24,28 @@ parser.add_argument("--court", type=str, help="Court code to process (optional)"
 parser.add_argument("--debug", action="store_true", help="Enable debug output")
 parser.add_argument("--stage", type=int, help="Run only this specific stage (1-8)")
 args = parser.parse_args()
+
+# Get the absolute path of the current script
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Ensure court_config.yaml is accessible in the expected location
+if os.path.exists(os.path.join(current_dir, 'court_config.yaml')):
+    print(f"court_config.yaml found in {current_dir}")
+else:
+    # Check if it exists elsewhere and copy it
+    found_paths = []
+    for root, dirs, files in os.walk(current_dir):
+        if 'court_config.yaml' in files:
+            found_paths.append(os.path.join(root, 'court_config.yaml'))
+    
+    if found_paths:
+        # Use the first found instance
+        source_path = found_paths[0]
+        target_path = os.path.join(current_dir, 'court_config.yaml')
+        shutil.copy2(source_path, target_path)
+        print(f"Copied court_config.yaml from {source_path} to {current_dir}")
+    else:
+        print("WARNING: court_config.yaml not found in repository!")
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "zalr_backend.settings.github_actions")
