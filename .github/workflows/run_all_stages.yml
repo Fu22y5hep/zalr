@@ -28,9 +28,18 @@ jobs:
       
       - name: Install dependencies
         run: |
+          # Create the virtual environment
           uv venv
           source .venv/bin/activate
-          uv pip install -r requirements.txt
+          
+          # Configure uv to prefer binary wheels and not build from source when possible
+          export UV_PREFER_WHEELS=1
+          
+          # Install Pillow explicitly first to avoid build issues
+          uv pip install --prefer-binary pillow==10.0.1
+          
+          # Install the rest of the requirements
+          uv pip install --prefer-binary -r requirements.txt
           
           # Install Django explicitly to ensure it's available
           uv pip install django==5.1.4
