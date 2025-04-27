@@ -185,6 +185,7 @@ jobs:
           SUPABASE_PUBLIC_KEY=${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
           DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}
           EOF
           
           # Export environment variables
@@ -219,6 +220,7 @@ jobs:
           SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
           DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       
       - name: Upload logs as artifacts
         if: always()
@@ -248,4 +250,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions 
+          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }} 

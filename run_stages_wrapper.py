@@ -53,6 +53,40 @@ import django
 django.setup()
 print("Django successfully initialized with settings:", os.environ.get("DJANGO_SETTINGS_MODULE"))
 
+# Check for required API keys
+required_keys = {
+    "OPENAI_API_KEY": "OpenAI API key for text generation",
+    "VOYAGE_API_KEY": "Voyage AI API key for embeddings in stage 3",
+    "SUPABASE_URL": "Supabase URL for database access",
+    "SUPABASE_PUBLIC_KEY": "Supabase public key for database access"
+}
+
+missing_keys = []
+for key, description in required_keys.items():
+    if not os.environ.get(key):
+        missing_keys.append(f"{key} ({description})")
+
+if missing_keys:
+    print("\n⚠️ WARNING: The following required environment variables are missing:")
+    for key in missing_keys:
+        print(f"  - {key}")
+    print("\nSome stages may fail if these keys are not provided.")
+    print("Please add them to your environment or .env file.")
+    
+    # Check if running in GitHub Actions
+    in_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
+    
+    if args.debug or in_github_actions:
+        print("\nContinuing anyway in CI/debug mode...\n")
+    else:
+        proceed = input("\nDo you want to continue anyway? (y/n): ")
+        if proceed.lower() != 'y':
+            print("Aborting.")
+            sys.exit(1)
+        print()
+else:
+    print("All required API keys found in environment variables.")
+
 # Stage script paths
 stage_scripts = [
     "stages/stage1_scrape_judgments.py",
