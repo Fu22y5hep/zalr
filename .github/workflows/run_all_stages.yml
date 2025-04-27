@@ -17,49 +17,115 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Debug - List repository structure
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Repository root contents:"
-          ls -la
-      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       
-      - name: Install basic dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install python-dotenv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       
-      - name: Create environment variables file
+      - name: Install dependencies with uv
         run: |
-          # Create a dummy .env file with placeholders for testing
-          echo "OPENAI_API_KEY=sk-dummy-api-key-for-testing" > .env
-          echo "SUPABASE_URL=https://dummy-supabase-url.supabase.co" >> .env
-          echo "SUPABASE_PUBLIC_KEY=dummy-public-key" >> .env
-          echo "DJANGO_SECRET_KEY=dummy-django-secret-key" >> .env
-          cat .env
+          uv venv
+          uv pip install -r requirements.txt
+          uv pip install -e .
       
-      - name: Run simplified pipeline
+      - name: Create settings module
+        run: |
+          # Create a production Django settings module for GitHub Actions
+          mkdir -p zalr_backend/settings
+          cat > zalr_backend/settings/__init__.py << 'EOF'
+          from .base import *
+          EOF
+          
+          cat > zalr_backend/settings/github_actions.py << 'EOF'
+          # Settings for GitHub Actions environment
+          from zalr_backend.settings import *
+          import os
+          
+          # Use same database but with GitHub Actions specific settings
+          DATABASES = {
+              'default': {
+                  'ENGINE': 'django.db.backends.postgresql',
+                  'NAME': 'postgres',
+                  'USER': os.getenv('POSTGRES_USER', 'postgres.njrvojczjhsfdlbjqiop'),
+                  'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'R8CW-fwkhm5xJt-'),
+                  'HOST': os.getenv('POSTGRES_HOST', 'aws-0-eu-central-1.pooler.supabase.com'),
+                  'PORT': os.getenv('POSTGRES_PORT', '6543'),
+                  'OPTIONS': {
+                      'connect_timeout': 10,
+                      'options': '-c statement_timeout=15000ms',
+                  },
+                  'CONN_MAX_AGE': 60,
+              }
+          }
+          
+          # Set correct domain for GitHub Actions
+          ALLOWED_HOSTS = ['*']
+          
+          # Disable debug in production
+          DEBUG = False
+          
+          # AWS settings if needed
+          AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID', '')
+          AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', '')
+          
+          # Other production settings
+          SECURE_SSL_REDIRECT = False
+          SESSION_COOKIE_SECURE = False
+          CSRF_COOKIE_SECURE = False
+          SECURE_BROWSER_XSS_FILTER = True
+          X_FRAME_OPTIONS = 'DENY'
+          EOF
+      
+      - name: Setup environment
+        run: |
+          # Create .env file with secrets
+          cat > .env << EOF
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLIC_KEY=${{ secrets.SUPABASE_PUBLIC_KEY }}
+          DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          EOF
+          
+          # Export environment variables
+          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          
+          echo "Environment setup complete"
+          echo "DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE"
+          echo "PYTHONPATH=$PYTHONPATH"
+      
+      - name: Test Django setup
+        run: |
+          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          
+          # Check if Django is configured correctly
+          uv run python -c "import django; django.setup(); from django.conf import settings; print(f'Django settings module: {settings.SETTINGS_MODULE}'); print(f'Installed apps: {settings.INSTALLED_APPS}')"
+      
+      - name: Run pipeline using zalr CLI
         run: |
           CURRENT_YEAR=$(date +%Y)
-          echo "Running simplified pipeline for year $CURRENT_YEAR"
           
-          # Run the simple pipeline script
-          python simple_pipeline.py $CURRENT_YEAR
+          # Export environment variables
+          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          
+          # Make the zalr script executable
+          chmod +x stages/zalr
+          
+          # Run the actual pipeline using zalr CLI
+          echo "Running pipeline for $CURRENT_YEAR using zalr CLI"
+          uv run ./stages/zalr run-all --year $CURRENT_YEAR
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-      
-      - name: Verify logs directory
-        if: always()
-        run: |
-          mkdir -p logs
-          ls -la logs/
+          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions
       
       - name: Upload logs as artifacts
         if: always()
@@ -67,4 +133,26 @@ jobs:
         with:
           name: process-logs
           path: logs/
-          retention-days: 7 
+          retention-days: 7
+      
+      - name: Fallback to individual stages via zalr CLI if full run fails
+        if: failure()
+        run: |
+          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          
+          CURRENT_YEAR=$(date +%Y)
+          
+          echo "Falling back to running individual stages via zalr CLI"
+          
+          # Run each stage individually using zalr CLI
+          for stage_num in {1..8}; do
+            echo "Running stage ${stage_num}"
+            uv run ./stages/zalr run --stage $stage_num --year $CURRENT_YEAR || echo "Stage ${stage_num} failed"
+          done
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions 
