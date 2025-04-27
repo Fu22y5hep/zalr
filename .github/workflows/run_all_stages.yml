@@ -28,10 +28,54 @@ jobs:
       
       - name: Install dependencies
         run: |
-          uv venv
+          uv venv --name venv
+          source .venv/bin/activate
           uv pip install -r requirements.txt
+          
+          # Install Django explicitly to ensure it's available
+          uv pip install django==5.1.4
+          
           # Install the local package in editable mode
           uv pip install -e .
+          
+          # Verify Django installation
+          uv pip list | grep django
+          
+          # Create a test file to check Django import
+          cat > test_django.py << EOF
+          import os
+          import sys
+          
+          # Print Python path
+          print("Python path:", sys.path)
+          
+          # Try to import django
+          try:
+              import django
+              print(f"Django version: {django.__version__}")
+              print(f"Django path: {django.__file__}")
+          except ImportError as e:
+              print(f"Error importing Django: {e}")
+              sys.exit(1)
+          
+          # Try to setup django with our settings
+          try:
+              os.environ.setdefault("DJANGO_SETTINGS_MODULE", "zalr_backend.github_actions")
+              django.setup()
+              print("Django setup successful")
+              
+              # Test importing settings
+              from django.conf import settings
+              print(f"Settings module: {settings.SETTINGS_MODULE}")
+              print(f"Installed apps: {settings.INSTALLED_APPS}")
+          except Exception as e:
+              print(f"Error setting up Django: {e}")
+              import traceback
+              traceback.print_exc()
+          EOF
+          
+          # Run the test
+          uv run python test_django.py
       
       - name: Create .env file from secrets
         run: |
@@ -258,4 +302,11 @@ jobs:
           SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
           DJANGO_SETTINGS_MODULE: zalr_backend.github_actions
-          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }} 
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      
+      # Add a step to check what's in the virtual environment
+      - name: Check virtual environment
+        run: |
+          ls -la .venv/lib/python*/site-packages/ | grep -i django
+          # See if Django is in the Python path
+          uv run python -c "import sys; print(sys.path)" 
