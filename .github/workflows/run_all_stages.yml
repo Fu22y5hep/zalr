@@ -203,7 +203,7 @@ jobs:
           # Check if Django is configured correctly
           uv run python -c "import django; django.setup(); from django.conf import settings; print(f'Django settings module: {settings.SETTINGS_MODULE}'); print(f'Installed apps: {settings.INSTALLED_APPS}')"
       
-      - name: Run pipeline using stage scripts directly
+      - name: Run pipeline using wrapper script
         run: |
           CURRENT_YEAR=$(date +%Y)
           
@@ -211,24 +211,8 @@ jobs:
           export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           
-          # Make scripts executable
-          chmod +x stages/stage*.py
-          
-          echo "Running pipeline for $CURRENT_YEAR using stage scripts directly"
-          
-          # First run the Django setup script to initialize Django
-          echo "Initializing Django before running stage scripts..."
-          uv run python django_setup.py
-          
-          # Run each stage script in sequence
-          uv run python stages/stage1_scrape_judgments.py --year $CURRENT_YEAR
-          uv run python stages/stage2_fix_metadata.py --year $CURRENT_YEAR
-          uv run python stages/stage3_chunk_judgments.py --year $CURRENT_YEAR
-          uv run python stages/stage4_generate_embeddings.py --year $CURRENT_YEAR
-          uv run python stages/stage5_generate_short_summaries.py --year $CURRENT_YEAR
-          uv run python stages/stage6_calculate_reportability.py --year $CURRENT_YEAR
-          uv run python stages/stage7_generate_long_summaries.py --year $CURRENT_YEAR
-          uv run python stages/stage8_classify_practice_areas.py --year $CURRENT_YEAR
+          echo "Running all stages for $CURRENT_YEAR using wrapper script"
+          uv run python run_stages_wrapper.py --year $CURRENT_YEAR
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -244,7 +228,7 @@ jobs:
           path: logs/
           retention-days: 7
       
-      - name: Fallback if any stage fails
+      - name: Fallback to individual stages if wrapper fails
         if: failure()
         run: |
           export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
@@ -252,17 +236,12 @@ jobs:
           
           CURRENT_YEAR=$(date +%Y)
           
-          echo "Fallback: Running any stages that might have failed individually with detailed error reporting"
+          echo "Fallback: Running stages individually with debug output"
           
-          # First ensure Django is initialized
-          echo "Initializing Django before running stage scripts..."
-          uv run python django_setup.py
-          
-          # Try running individual stages with --debug flag for more info
-          for stage_script in stages/stage{1..8}_*.py; do
-            script_name=$(basename $stage_script)
-            echo "Attempting to run $script_name with debug output"
-            uv run python $stage_script --year $CURRENT_YEAR --debug || echo "$script_name failed, continuing with next stage"
+          # Run each stage individually
+          for stage_num in {1..8}; do
+            echo "Running stage $stage_num with debug output"
+            uv run python run_stages_wrapper.py --year $CURRENT_YEAR --stage $stage_num --debug || echo "Stage $stage_num failed, continuing with next stage"
           done
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
