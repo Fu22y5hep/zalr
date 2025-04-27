@@ -30,6 +30,8 @@ jobs:
         run: |
           uv venv
           uv pip install -r requirements.txt
+          # Install the local package in editable mode
+          uv pip install -e .
       
       - name: Create .env file from secrets
         run: |
@@ -37,40 +39,20 @@ jobs:
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
           echo "SUPABASE_PUBLIC_KEY=${{ secrets.SUPABASE_PUBLIC_KEY }}" >> .env
           echo "DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}" >> .env
-          echo "DJANGO_SETTINGS_MODULE=semantis.settings" >> .env
+          echo "DJANGO_SETTINGS_MODULE=zalr_backend.github_actions" >> .env
           echo "VOYAGE_API_KEY=${{ secrets.VOYAGE_API_KEY }}" >> .env
-      
-      - name: Run migrations
-        run: |
-          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
-          export PYTHONPATH=$PYTHONPATH:$(pwd)
-          uv run python manage.py migrate
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
-          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions
-          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       
       - name: Create settings module
         run: |
-          # Create a production Django settings module for GitHub Actions
-          mkdir -p zalr_backend/settings
-          
-          # Create an empty __init__.py file instead of trying to import from base
-          cat > zalr_backend/settings/__init__.py << 'EOF'
-          # Empty init file
-          EOF
-          
-          cat > zalr_backend/settings/github_actions.py << 'EOF'
+          # Create a GitHub Actions specific settings file
+          cat > zalr_backend/github_actions.py << 'EOF'
           # Settings for GitHub Actions environment
           # Standalone settings file - not importing from base
           import os
           import sys
           
           # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
-          BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+          BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
           
           # Add the project directory to the path so we can import modules
           sys.path.insert(0, BASE_DIR)
@@ -198,10 +180,23 @@ jobs:
           DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
           EOF
       
+      - name: Run migrations
+        run: |
+          export DJANGO_SETTINGS_MODULE=zalr_backend.github_actions
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          uv run python manage.py migrate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_SETTINGS_MODULE: zalr_backend.github_actions
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      
       - name: Setup environment
         run: |
           # Export environment variables
-          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export DJANGO_SETTINGS_MODULE=zalr_backend.github_actions
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           
           echo "Environment setup complete"
@@ -210,7 +205,7 @@ jobs:
       
       - name: Test Django setup
         run: |
-          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export DJANGO_SETTINGS_MODULE=zalr_backend.github_actions
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           
           # Check if Django is configured correctly
@@ -221,7 +216,7 @@ jobs:
           CURRENT_YEAR=$(date +%Y)
           
           # Export environment variables
-          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export DJANGO_SETTINGS_MODULE=zalr_backend.github_actions
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           
           echo "Running all stages for $CURRENT_YEAR using wrapper script"
@@ -231,7 +226,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions
+          DJANGO_SETTINGS_MODULE: zalr_backend.github_actions
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
       
       - name: Upload logs as artifacts
@@ -245,7 +240,7 @@ jobs:
       - name: Fallback to individual stages if wrapper fails
         if: failure()
         run: |
-          export DJANGO_SETTINGS_MODULE=zalr_backend.settings.github_actions
+          export DJANGO_SETTINGS_MODULE=zalr_backend.github_actions
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           
           CURRENT_YEAR=$(date +%Y)
@@ -262,5 +257,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLIC_KEY: ${{ secrets.SUPABASE_PUBLIC_KEY }}
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-          DJANGO_SETTINGS_MODULE: zalr_backend.settings.github_actions
+          DJANGO_SETTINGS_MODULE: zalr_backend.github_actions
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }} 
