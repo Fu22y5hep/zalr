@@ -27,25 +27,84 @@ args = parser.parse_args()
 
 # Get the absolute path of the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = current_dir
 
 # Ensure court_config.yaml is accessible in the expected location
-if os.path.exists(os.path.join(current_dir, 'court_config.yaml')):
+court_config_path = os.path.join(current_dir, 'court_config.yaml')
+if os.path.exists(court_config_path):
     print(f"court_config.yaml found in {current_dir}")
 else:
-    # Check if it exists elsewhere and copy it
-    found_paths = []
-    for root, dirs, files in os.walk(current_dir):
-        if 'court_config.yaml' in files:
-            found_paths.append(os.path.join(root, 'court_config.yaml'))
+    # Try to find the file in various locations
+    possible_locations = [
+        os.path.join(root_dir, 'court_config.yaml'),
+        os.path.join(root_dir, 'stages', 'court_config.yaml'),
+        os.path.join(root_dir, 'semantis_app', 'court_config.yaml'),
+        os.path.join(root_dir, 'zalr_backend', 'court_config.yaml'),
+    ]
     
-    if found_paths:
-        # Use the first found instance
-        source_path = found_paths[0]
-        target_path = os.path.join(current_dir, 'court_config.yaml')
-        shutil.copy2(source_path, target_path)
-        print(f"Copied court_config.yaml from {source_path} to {current_dir}")
-    else:
-        print("WARNING: court_config.yaml not found in repository!")
+    found = False
+    for loc in possible_locations:
+        if os.path.exists(loc):
+            shutil.copy2(loc, court_config_path)
+            print(f"Copied court_config.yaml from {loc} to {current_dir}")
+            found = True
+            break
+    
+    # If we still couldn't find it, check recursively
+    if not found:
+        found_paths = []
+        for root, dirs, files in os.walk(root_dir):
+            if 'court_config.yaml' in files:
+                found_paths.append(os.path.join(root, 'court_config.yaml'))
+        
+        if found_paths:
+            # Use the first found instance
+            source_path = found_paths[0]
+            shutil.copy2(source_path, court_config_path)
+            print(f"Copied court_config.yaml from {source_path} to {current_dir}")
+            found = True
+    
+    # If we still can't find it, create a default one
+    if not found:
+        print("WARNING: court_config.yaml not found in repository, creating default version")
+        default_court_config = """# Court Configuration
+courts:
+  - code: ZACC
+    name: Constitutional Court of South Africa
+    url: https://www.saflii.org/za/cases/ZACC/
+    priority: 1
+    scrape_method: saflii
+  - code: ZASCA
+    name: Supreme Court of Appeal
+    url: https://www.saflii.org/za/cases/ZASCA/
+    priority: 2
+    scrape_method: saflii
+  - code: ZAGPPHC
+    name: Gauteng Division, Pretoria
+    url: https://www.saflii.org/za/cases/ZAGPPHC/
+    priority: 3
+    scrape_method: saflii
+  - code: ZAWCHC
+    name: Western Cape Division, Cape Town
+    url: https://www.saflii.org/za/cases/ZAWCHC/
+    priority: 4
+    scrape_method: saflii
+  - code: ZAKZDHC
+    name: KwaZulu-Natal Division, Durban
+    url: https://www.saflii.org/za/cases/ZAKZDHC/
+    priority: 5
+    scrape_method: saflii
+"""
+        with open(court_config_path, 'w') as f:
+            f.write(default_court_config)
+        print(f"Created default court_config.yaml at {court_config_path}")
+        
+# Copy to stages directory as well to ensure scripts can find it there
+stages_dir = os.path.join(root_dir, 'stages')
+if os.path.exists(stages_dir) and os.path.exists(court_config_path):
+    stages_config_path = os.path.join(stages_dir, 'court_config.yaml')
+    shutil.copy2(court_config_path, stages_config_path)
+    print(f"Copied court_config.yaml to stages directory at {stages_config_path}")
 
 # Set up Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "zalr_backend.settings.github_actions")
