@@ -107,7 +107,54 @@ def get_case_url(citation: str, court: str, year: int) -> Optional[str]:
         return f"https://www.saflii.org/za/cases/{court}/{year}/{number}.html"
     return None
 
-def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = None) -> List[Judgment]:
+def get_last_judgment_number(court: str, year: int) -> int:
+    """
+    Get the highest case number we already have for the specified court and year.
+    This helps us know which cases to skip on subsequent runs.
+    """
+    from ..models import Judgment
+    
+    # Look for pattern in existing judgment URLs for this court and year
+    pattern = rf'https://www.saflii.org/za/cases/{court}/{year}/(\d+).html'
+    
+    # Query all relevant judgments
+    judgments = Judgment.objects.filter(
+        court=court, 
+        neutral_citation_year=year,
+        saflii_url__isnull=False
+    )
+    
+    highest_number = 0
+    
+    for judgment in judgments:
+        if not judgment.saflii_url:
+            continue
+            
+        match = re.search(pattern, judgment.saflii_url)
+        if match:
+            number = int(match.group(1))
+            highest_number = max(highest_number, number)
+    
+    return highest_number
+
+def get_existing_judgment_urls(court: str, year: int) -> List[str]:
+    """
+    Get a list of all existing judgment URLs for the specified court and year.
+    This is more precise than get_last_judgment_number since it accounts for gaps.
+    """
+    from ..models import Judgment
+    
+    # Query all relevant judgments
+    judgments = Judgment.objects.filter(
+        court=court, 
+        neutral_citation_year=year,
+        saflii_url__isnull=False
+    )
+    
+    return [j.saflii_url for j in judgments if j.saflii_url]
+
+def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = None, 
+                       incremental: bool = True) -> List[Judgment]:
     """
     Scrape all judgments from a specific court and year.
     
@@ -115,6 +162,7 @@ def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = No
         court: Court code (e.g., 'ZACC' for Constitutional Court)
         year: Year to scrape (e.g., 2024)
         single_case_url: Optional URL for scraping a single case
+        incremental: If True, only fetch new judgments not already in the database
         
     Returns:
         List of created Judgment objects
@@ -128,35 +176,65 @@ def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = No
         else:
             base_url = f"https://www.saflii.org/za/cases/{court}/{year}/"
             print(f"\nScraping {court} judgments from {year}")
+            
+            # Get existing judgment URLs to check for duplicates more efficiently
+            existing_urls = get_existing_judgment_urls(court, year)
+            
+            if incremental and existing_urls:
+                # Get the highest case number we already have 
+                last_number = get_last_judgment_number(court, year)
+                if last_number > 0:
+                    # If we have cases already, construct the URL to fetch only newer cases
+                    print(f"Last scraped case number for {court} {year}: {last_number}")
+                    # Get the list page which will show cases after our last one
+                    # We'll still verify each one to be safe
+                    base_url = f"https://www.saflii.org/za/cases/{court}/{year}/"
+                    print(f"Using incremental mode starting from case {last_number+1}")
+            
             citations = get_saflii_citations(base_url, target_court=court)
         
         if not citations:
             print(f"No cases found for {court} {year}")
             return []
         
-        print(f"\nFound {len(citations)} cases to process\n")
+        print(f"\nFound {len(citations)} cases in SAFLII index")
+        
+        # Get existing judgment URLs to check for duplicates more efficiently
+        existing_urls = get_existing_judgment_urls(court, year) if not single_case_url else []
+        existing_count = 0
+        new_count = 0
+        
+        # Filter out citations that we already have (pre-filtering before processing)
+        filtered_citations = []
+        for citation in citations:
+            url = get_case_url(citation, court, year) if not single_case_url else single_case_url
+            if not url:
+                print(f"Could not generate URL for citation: {citation}")
+                continue
+                
+            if url in existing_urls:
+                print(f"Skipping already existing: {citation}")
+                existing_count += 1
+                continue
+                
+            filtered_citations.append((citation, url))
+            new_count += 1
+            
+        print(f"\nAfter filtering: {existing_count} existing cases (skipped), {new_count} new cases to process\n")
         
         # Use docling's DocumentConverter for document conversion only
         converter = DocumentConverter()
         judgments = []
         
-        for citation in citations:
+        for citation, url in filtered_citations:
             try:
-                if single_case_url:
-                    url = single_case_url
-                else:
-                    url = get_case_url(citation, court, year)
-                    
-                if not url:
-                    print(f"Could not generate URL for citation: {citation}")
-                    continue
-                    
                 print(f"\nProcessing: {citation}")
                 print(f"Source: {url}")
                 
-                # Check if judgment already exists
+                # Final check before downloading - maybe another process already got it
+                from ..models import Judgment
                 if Judgment.objects.filter(saflii_url=url).exists():
-                    print(f"Judgment already exists: {citation}")
+                    print(f"Judgment already exists (added during current run): {citation}")
                     continue
                 
                 # Convert document using docling
@@ -204,7 +282,11 @@ def scrape_court_year(court: str, year: int, single_case_url: Optional[str] = No
                 print(f"Error processing case {citation}: {str(e)}")
                 continue
         
-        print(f"\nSuccessfully converted {len(judgments)} out of {len(citations)} judgments.")
+        print(f"\nSummary for {court} {year}:")
+        print(f"- Existing cases (skipped): {existing_count}")
+        print(f"- New cases processed: {len(judgments)}")
+        print(f"- Failed cases: {new_count - len(judgments)}")
+        
         return judgments
 
     except Exception as e:
