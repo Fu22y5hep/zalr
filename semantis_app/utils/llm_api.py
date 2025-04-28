@@ -96,7 +96,15 @@ def create_llm_client(provider="openai"):
             api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
                 raise LLMException("OPENAI_API_KEY environment variable not set")
-            return OpenAI(api_key=api_key)
+            
+            # Only pass the valid parameters to prevent errors with proxies or other unexpected params
+            # The current OpenAI SDK only accepts a limited set of parameters
+            valid_params = {
+                "api_key": api_key
+                # Add other valid params if needed
+            }
+            
+            return OpenAI(**valid_params)
             
         elif provider == "azure":
             api_key = os.getenv("AZURE_OPENAI_API_KEY")
