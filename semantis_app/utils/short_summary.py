@@ -47,12 +47,25 @@ def generate_short_summary(text: str) -> Optional[str]:
         provider = "openai"
         logger.info(f"Using LLM Model: {model} (Provider: {provider})")
         
+        # Create OpenAI client with valid parameters only
+        from openai import OpenAI
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            logger.error("OPENAI_API_KEY environment variable not set")
+            return None
+            
+        # Only pass valid parameters to avoid proxy issue
+        client = OpenAI(api_key=api_key)
+        
         # Use OpenAI for generation
-        response = query_llm(
-            prompt=SUMMARY_PROMPT.format(text=text),
-            provider=provider,
-            model=model
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": SUMMARY_PROMPT.format(text=text)}],
+            max_tokens=1000,
+            temperature=0.7
         )
+        
+        response = completion.choices[0].message.content
         
         if not response:
             logger.error("No response received from LLM")

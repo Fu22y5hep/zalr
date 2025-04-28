@@ -15,6 +15,7 @@ django.setup()
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 #client = OpenAI(api_key=os.getenv('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com")
+
 # Updated prompt template without bullet/number lists and without a system message
 # Updated prompt template without text_here placeholders
 PROMPT_TEMPLATE = """
