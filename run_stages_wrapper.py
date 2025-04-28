@@ -107,10 +107,39 @@ if os.path.exists(stages_dir) and os.path.exists(court_config_path):
     print(f"Copied court_config.yaml to stages directory at {stages_config_path}")
 
 # Set up Django
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "zalr_backend.settings.github_actions")
-import django
-django.setup()
-print("Django successfully initialized with settings:", os.environ.get("DJANGO_SETTINGS_MODULE"))
+try:
+    print("Python path before import:", sys.path)
+    # Add the current directory to the Python path
+    sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+    
+    # Print the files in the current directory to ensure zalr_backend exists
+    print("Files in current directory:", os.listdir(os.path.dirname(__file__)))
+    
+    # If the zalr_backend directory exists, print its contents
+    backend_dir = os.path.join(os.path.dirname(__file__), 'zalr_backend')
+    if os.path.exists(backend_dir):
+        print("Files in zalr_backend directory:", os.listdir(backend_dir))
+        
+    # Print environment variables
+    print("DJANGO_SETTINGS_MODULE =", os.environ.get("DJANGO_SETTINGS_MODULE"))
+    
+    # Use the right settings module
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "zalr_backend.github_actions")
+    
+    # Try to import django and set it up
+    import django
+    django.setup()
+    print("Django successfully initialized with settings:", os.environ.get("DJANGO_SETTINGS_MODULE"))
+    
+    # Verify Django is working by importing a model
+    from django.conf import settings
+    print("Django settings loaded:", settings.INSTALLED_APPS)
+    
+except Exception as e:
+    print(f"Error setting up Django: {str(e)}")
+    import traceback
+    traceback.print_exc()
+    print("\nTrying to continue anyway...\n")
 
 # Check for required API keys
 required_keys = {

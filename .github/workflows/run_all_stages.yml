@@ -36,10 +36,10 @@ jobs:
           export UV_PREFER_WHEELS=1
           
           # Install Pillow explicitly first to avoid build issues
-          uv pip install --prefer-binary pillow==10.0.1
+          uv pip install pillow==10.0.1
           
           # Install the rest of the requirements
-          uv pip install --prefer-binary -r requirements.txt
+          uv pip install -r requirements.txt
           
           # Install Django explicitly to ensure it's available
           uv pip install django==5.1.4
