@@ -58,8 +58,8 @@ jobs:
           # Install pgvector for PostgreSQL vector operations
           uv pip install pgvector
           
-          # Install the local package in editable mode
-          uv pip install -e .
+          # Don't install the local package in editable mode - causes Python version conflicts
+          # uv pip install -e .
           
           # Restore original requirements file
           mv requirements.original.txt requirements.txt
