@@ -20,7 +20,7 @@ jobs:
       - name: Setup Python environment
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.10.12'
       
       - name: Install uv
         run: |
@@ -28,15 +28,19 @@ jobs:
       
       - name: Install dependencies
         run: |
-          # Create the virtual environment
-          uv venv
+          # Create the virtual environment with specific Python version
+          uv venv --python 3.10
           source .venv/bin/activate
           
           # Configure uv to prefer binary wheels and not build from source when possible
           export UV_PREFER_WHEELS=1
           
-          # Install Pillow explicitly first to avoid build issues
-          uv pip install pillow==10.0.1
+          # Install system dependencies for Pillow
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev zlib1g-dev
+          
+          # Install Pillow explicitly first with a newer version
+          uv pip install pillow==10.2.0
           
           # Install the rest of the requirements
           uv pip install -r requirements.txt
